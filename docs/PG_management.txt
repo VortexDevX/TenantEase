@@ -1,0 +1,585 @@
+========================================================
+🏠 TENANTEASE — Complete Product Idea Document
+========================================================
+
+📌 Tagline: "Smart Property & Tenant Management for India's PG Owners, Hostel Managers & Landlords"
+
+📌 One-liner: A web + mobile platform that replaces notebooks, WhatsApp groups,
+and mental math for anyone who rents out rooms, flats, PGs, or hostels in India.
+
+========================================================
+🔴 THE PROBLEM
+========================================================
+
+India has millions of PG owners, hostel operators, and small landlords.
+Here's how most of them operate TODAY:
+
+  → Tenant records? A notebook. Maybe a spreadsheet. Maybe just memory.
+  → Rent collection? Cash. Sometimes UPI. No tracking. No receipts.
+  → Late payments? Awkward WhatsApp messages. Door knocking. Arguments.
+  → Maintenance requests? Tenants call/text randomly. Things get forgotten.
+  → Agreements? Paper contracts. Or nothing at all.
+  → Electricity/water bills? Manual meter reading. Calculator. Split headaches.
+  → Vacating tenants? No system. Deposit disputes. Missing KYC. Chaos.
+  → Tax filing? No digital rent receipts. Landlords lose deductions.
+  → Occupancy tracking? "I think room 4 is empty... or did someone move in last week?"
+
+This is a ₹multi-billion market being run on WhatsApp and spiral notebooks.
+
+The few apps that exist are either:
+  ❌ Built for large real estate companies (too enterprise, too expensive)
+  ❌ Built for US/Western markets (Buildium, AppFolio — irrelevant in India)
+  ❌ Ugly, outdated, barely functional Indian apps
+  ❌ Just rent reminders with nothing else
+
+Nobody has built a clean, affordable, all-in-one solution for the
+small-to-medium Indian property owner.
+
+========================================================
+🎯 TARGET USERS
+========================================================
+
+👤 PRIMARY USERS (the ones who PAY):
+
+  1. PG Owners (Paying Guest accommodations)
+     → Typically 10-100 tenants
+     → Mostly in college towns and IT hubs
+     → Cities: Bangalore, Pune, Hyderabad, Delhi NCR, Mumbai, Chennai, Kota, Jaipur
+     → Pain: Managing many tenants, beds, rooms, meals, rent collection
+     → Tech comfort: Medium. Use smartphones daily. WhatsApp power users.
+
+  2. Hostel Owners / Managers
+     → Student hostels, working professional hostels
+     → Similar to PGs but sometimes larger (100-500 beds)
+     → Additional needs: mess/food management, visitor logs, curfew tracking
+
+  3. Small Landlords (1-20 properties)
+     → Own 1-20 flats/houses, rent them out
+     → Pain: Tracking rent from multiple tenants across properties
+     → Need rent receipts for tax purposes
+     → Tech comfort: Low to medium
+
+  4. Co-living Space Operators
+     → New-age co-living brands and small operators
+     → Need professional-looking tenant portals
+     → More tech-savvy, want integrations
+
+👤 SECONDARY USERS (the ones who USE but don't pay):
+
+  5. Tenants
+     → Pay rent through the platform
+     → Raise maintenance requests
+     → Download rent receipts
+     → View payment history
+     → Get reminders
+
+========================================================
+🧩 CORE FEATURES (MVP — First 2-3 Months)
+========================================================
+
+Start with ONLY these. Nothing else. Ship fast.
+
+────────────────────────────────────────
+📋 1. PROPERTY & ROOM MANAGEMENT
+────────────────────────────────────────
+  → Owner adds their property (name, address, type: PG/Hostel/Flat/House)
+  → Adds rooms/beds within the property
+  → Each room has: room number, type (single/double/triple/dormitory),
+    rent amount, deposit amount, status (occupied/vacant)
+  → Floor-wise or wing-wise organization
+  → Visual dashboard showing occupancy at a glance
+    (green = occupied, red = vacant, yellow = notice period)
+  → Quick stats: total rooms, occupied, vacant, total expected rent this month
+
+────────────────────────────────────────
+👤 2. TENANT MANAGEMENT
+────────────────────────────────────────
+  → Add tenant to a specific room/bed
+  → Tenant profile: name, phone, email, emergency contact,
+    ID proof (Aadhaar/PAN upload), photo
+  → Move-in date, expected duration, deposit paid
+  → Assign rent amount (can be custom per tenant)
+  → Tenant status: active, on notice period, vacated
+  → Tenant history: even after vacating, record stays for reference
+  → Bulk tenant import via Excel/CSV for existing PGs migrating to the platform
+  → Each tenant gets a unique link/login to their own mini-portal
+
+────────────────────────────────────────
+💰 3. RENT TRACKING & COLLECTION
+────────────────────────────────────────
+  → Monthly rent auto-generated for each tenant on their billing date
+  → Status: paid, unpaid, partially paid, overdue
+  → Record payment: cash, UPI, bank transfer, or online (through platform)
+  → Payment history for each tenant (12-month view, lifetime view)
+  → Dashboard: total rent expected this month vs total collected
+  → Overdue tenants highlighted in red
+  → Owner can add extra charges: electricity, water, maintenance, laundry, meals
+  → Late fee auto-calculation (configurable: ₹X per day or % per week)
+
+────────────────────────────────────────
+🔔 4. AUTOMATED REMINDERS
+────────────────────────────────────────
+  → Auto rent reminder to tenant via:
+    • SMS (via SMS gateway like MSG91, Twilio)
+    • WhatsApp (via WhatsApp Business API or unofficial but legal methods)
+    • Email
+    • In-app notification (push notification on mobile)
+  → Configurable: remind 3 days before due date, on due date, and every X days after
+  → Owner doesn't have to personally chase anyone anymore
+  → Polite, professional templates (not awkward personal messages)
+  → Example: "Hi Rahul, your rent of ₹8,500 for Room 204 is due on 5th June.
+    Pay via UPI to [owner UPI ID] or click here to pay online. — TenantEase"
+
+────────────────────────────────────────
+🧾 5. DIGITAL RENT RECEIPTS
+────────────────────────────────────────
+  → Auto-generated rent receipt after each payment
+  → PDF download for tenant
+  → Contains: landlord name, tenant name, property address, amount,
+    payment date, payment mode, receipt number
+  → Tenants need this for HRA tax exemption claims — HUGE value prop
+  → Owner's PAN on receipt (optional but needed for tax validity)
+  → Annual receipt summary (April-March) for tax filing season
+  → Branded with owner's name/logo if premium
+
+────────────────────────────────────────
+🔧 6. MAINTENANCE REQUESTS
+────────────────────────────────────────
+  → Tenant raises a request: category (plumbing, electrical, furniture,
+    internet, cleaning, other), description, photo upload
+  → Owner sees all requests in a list: new, in progress, resolved
+  → Owner can assign to a handyman/worker (just name + phone)
+  → Tenant gets notified when status changes
+  → Simple. Not a full ticketing system. Just enough.
+
+========================================================
+🚀 PHASE 2 FEATURES (Month 3-6)
+========================================================
+
+After MVP is live and getting feedback, add these:
+
+────────────────────────────────────────
+📄 7. RENTAL AGREEMENT GENERATOR
+────────────────────────────────────────
+  → Pre-built legal templates (state-wise, since rental laws vary)
+  → Auto-fill from tenant + property data already in system
+  → Generate PDF agreement
+  → Optional: e-signature integration (Digio, Leegality — Indian e-sign providers)
+  → Optional: e-stamp paper integration (where legally applicable)
+  → Saves owners ₹500-2000 per agreement they currently pay a lawyer/agent for
+
+────────────────────────────────────────
+⚡ 8. ELECTRICITY & UTILITY BILLING
+────────────────────────────────────────
+  → Owner enters meter readings (start of month, end of month) per room
+  → Auto-calculates units consumed × rate per unit
+  → Adds to that month's rent bill
+  → Water charges (flat rate or metered)
+  → Common area electricity split equally among tenants
+  → This alone will make PG owners LOVE the product. This is their biggest headache.
+
+────────────────────────────────────────
+💳 9. ONLINE PAYMENT INTEGRATION
+────────────────────────────────────────
+  → Integrate Razorpay / Cashfree / PayU
+  → Tenant pays rent directly through the platform
+  → UPI, debit card, net banking, credit card
+  → Auto-reconciliation: payment received → mark rent as paid → generate receipt
+  → Owner gets money in their bank account (after platform fee)
+  → Platform can take 1-2% transaction fee or flat ₹5-10 per transaction
+
+────────────────────────────────────────
+📊 10. REPORTS & ANALYTICS
+────────────────────────────────────────
+  → Monthly income report per property
+  → Occupancy rate trends (monthly, quarterly, yearly)
+  → Defaulter report (tenants who consistently pay late)
+  → Expense tracking (owner enters property expenses: repairs, bills, staff salary)
+  → Profit/loss per property
+  → Exportable to Excel/PDF for CA/accountant
+  → Tax-ready annual summary
+
+────────────────────────────────────────
+📱 11. TENANT MOBILE APP / PORTAL
+────────────────────────────────────────
+  → Tenants log in (phone OTP, no password needed)
+  → See their rent status, payment history
+  → Download receipts
+  → Raise maintenance requests
+  → See announcements from owner (water shutdown, event, rule changes)
+  → Pay rent online
+  → This makes the product VIRAL: every owner who joins brings 10-50 tenants
+    who see the platform. Some of those tenants will become PG owners one day.
+
+========================================================
+🌟 PHASE 3 FEATURES (Month 6-12)
+========================================================
+
+These are differentiators and scale features:
+
+────────────────────────────────────────
+🍽️ 12. MESS / FOOD MANAGEMENT (for PGs with food service)
+────────────────────────────────────────
+  → Weekly/monthly meal plan display
+  → Tenant marks "skip meal" (for food waste reduction & refund tracking)
+  → Guest meal charges
+  → Monthly food charges auto-added to rent bill
+
+────────────────────────────────────────
+🚪 13. MOVE-IN / MOVE-OUT WORKFLOW
+────────────────────────────────────────
+  → New tenant onboarding checklist: documents collected? deposit paid?
+    agreement signed? key handed over? room condition photos taken?
+  → Move-out: damage assessment, deposit deduction calculator,
+    final settlement amount, clearance certificate
+  → Room condition comparison (move-in photos vs move-out photos)
+
+────────────────────────────────────────
+📢 14. ANNOUNCEMENT BOARD
+────────────────────────────────────────
+  → Owner posts announcements visible to all tenants or specific floors/rooms
+  → "Water supply off on Sunday 10am-2pm"
+  → "New WiFi password: xyz123"
+  → "Rent increase effective next month"
+  → Replaces WhatsApp group chaos
+
+────────────────────────────────────────
+🏢 15. MULTI-PROPERTY MANAGEMENT
+────────────────────────────────────────
+  → Single dashboard for owners who have 2-10 properties
+  → Switch between properties
+  → Consolidated view: total income across all properties
+  → Staff accounts: assign a manager per property with limited access
+
+────────────────────────────────────────
+🔐 16. STAFF & ROLE MANAGEMENT
+────────────────────────────────────────
+  → Owner creates staff accounts: property manager, accountant, warden
+  → Role-based access: manager can see tenants but not financials,
+    accountant can see finances but not maintenance, etc.
+
+────────────────────────────────────────
+📍 17. LISTING & VACANCY ADVERTISING
+────────────────────────────────────────
+  → Owner marks rooms as vacant
+  → Auto-generates a shareable listing page with photos, amenities, rent, location
+  → Potential tenants can enquire or book directly
+  → SEO-optimized pages: "PG near VIT Pune" "PG in Koramangala Bangalore"
+  → This is FREE marketing for you — every listing brings organic traffic
+  → Think: PG owners get a mini-website for their property for free
+
+========================================================
+💸 MONETIZATION STRATEGY
+========================================================
+
+Layer your revenue. Don't rely on just one stream.
+
+  💰 FREEMIUM SUBSCRIPTION MODEL:
+
+  ┌──────────────────────────────────────────────────────┐
+  │ FREE PLAN                                            │
+  │ → 1 property, up to 5 rooms/tenants                  │
+  │ → Rent tracking, reminders (email only), receipts    │
+  │ → Basic maintenance requests                         │
+  │ → TenantEase branding on receipts & tenant portal    │
+  │ → This is your acquisition funnel. Make it generous.  │
+  └──────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────┐
+  │ STARTER PLAN — ₹299/month                            │
+  │ → 1 property, up to 25 rooms/tenants                 │
+  │ → SMS + WhatsApp reminders                           │
+  │ → Utility billing                                    │
+  │ → Agreement templates                                │
+  │ → Remove TenantEase branding                         │
+  └──────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────┐
+  │ PRO PLAN — ₹699/month                                │
+  │ → Up to 3 properties, 100 rooms/tenants              │
+  │ → Everything in Starter                              │
+  │ → Online rent collection                             │
+  │ → Reports & analytics                                │
+  │ → Staff accounts (up to 3)                           │
+  │ → Vacancy listing page                               │
+  │ → Priority support                                   │
+  └──────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────┐
+  │ BUSINESS PLAN — ₹1,499/month                         │
+  │ → Unlimited properties, unlimited rooms/tenants      │
+  │ → Everything in Pro                                  │
+  │ → Multi-property dashboard                           │
+  │ → Unlimited staff accounts                           │
+  │ → API access                                         │
+  │ → Custom branding on tenant portal                   │
+  │ → Dedicated account manager                          │
+  └──────────────────────────────────────────────────────┘
+
+  💰 TRANSACTION FEES:
+  → 1-2% on online rent payments processed through platform
+  → This can become your BIGGEST revenue stream at scale
+  → If 1000 tenants pay ₹8,000 rent through you monthly:
+    ₹80,00,000 processed × 1.5% = ₹1,20,000/month from transactions alone
+
+  💰 ADDITIONAL REVENUE:
+  → Agreement generation: ₹99 per agreement (one-time)
+  → Premium listing placement for vacancies
+  → Lead generation: connect PG owners with furniture vendors, 
+    WiFi providers, laundry services, security services
+    (charge vendors for leads — affiliate model)
+  → API access for property management companies
+
+========================================================
+📊 MARKET SIZE (rough estimates)
+========================================================
+
+  → India has an estimated 10-15 million rental properties
+  → PGs alone: estimated 1-2 million PGs across major cities
+  → Hostels: thousands of private hostels in every college town
+  → Even capturing 0.1% = 10,000-15,000 paying customers
+  → At average ₹500/month = ₹50-75 lakhs/month recurring revenue
+  → This is a ₹100+ crore opportunity if executed well
+
+========================================================
+🏗️ TECHNICAL CONSIDERATIONS (no code, just direction)
+========================================================
+
+  🖥️ PLATFORM:
+  → Web app (responsive, works on mobile browsers) — PRIMARY
+  → Mobile app (React Native or Flutter) — LATER (Phase 2/3)
+  → Start web-first. PG owners will use it on phones via browser.
+  → PWA (Progressive Web App) is a good middle ground — installable, offline-capable
+
+  🛠️ TECH STACK SUGGESTION:
+  → Frontend: React or Next.js (SEO benefits for listing pages)
+  → Backend: Node.js (Express/Fastify) or Go or Python (Django/FastAPI)
+  → Database: PostgreSQL (relational data fits perfectly here)
+  → Auth: Phone OTP (Twilio/MSG91) — no passwords, India-friendly
+  → Payments: Razorpay (best for Indian market)
+  → SMS: MSG91 or Twilio
+  → WhatsApp: Official WhatsApp Business API via providers like
+    Interakt, Wati, or AiSensy
+  → File storage: AWS S3 or Cloudflare R2 (for KYC docs, photos)
+  → Hosting: AWS / DigitalOcean / Railway / Render
+  → PDF generation: Puppeteer or React-PDF (for receipts, agreements)
+
+  📐 KEY ARCHITECTURE DECISIONS:
+  → Multi-tenant SaaS architecture (each owner = one tenant in your system)
+  → Role-based access control from day 1 (owner, staff, tenant)
+  → Design the database schema to handle multiple properties per owner from start
+    even if MVP only supports one — saves painful migration later
+  → API-first design: build backend as REST/GraphQL API
+    so mobile app can plug in later without rewriting anything
+
+========================================================
+📣 GO-TO-MARKET STRATEGY
+========================================================
+
+  🔥 PHASE 1: SEED USERS (Month 1-3)
+
+  → Start with YOUR city. Walk into PGs near colleges.
+  → Offer FREE setup + FREE plan. Do it yourself. Onboard them personally.
+  → Target: 20-30 PG owners as beta users.
+  → Collect feedback obsessively. What works? What's missing? What's confusing?
+  → Build relationships. These become your testimonials and case studies.
+  → Hit up PG owner associations if they exist in your city.
+  → College notice boards, local business WhatsApp groups.
+
+  🔥 PHASE 2: ORGANIC GROWTH (Month 3-6)
+
+  → SEO: Create pages like "PG management software India",
+    "how to manage PG tenants", "rent receipt generator free",
+    "PG near [college name]" (from listing feature)
+  → YouTube: Screen-record demo videos. "How to manage your PG digitally"
+  → Content: Blog posts on PG management tips, rental laws by state,
+    tax benefits of rental income, how to write rental agreements
+  → Social: Instagram/Facebook ads targeting PG owners (they're on FB/Insta,
+    not Twitter/LinkedIn)
+  → Google My Business: "PG management app"
+
+  🔥 PHASE 3: VIRAL LOOPS (Month 6-12)
+
+  → Every owner who joins brings 10-100 tenants onto the platform
+  → Tenants see "Powered by TenantEase" on their receipt/portal
+  → Some tenants become PG owners or recommend it to their PG owner friends
+  → Referral program: Owner refers another owner → 1 month free
+  → Vacancy listings bring SEO traffic → some visitors are PG owners looking
+    at competitor listings → they discover your management tool
+
+  🔥 PHASE 4: PARTNERSHIPS (Month 9-12+)
+
+  → Partner with real estate agents who deal with rental properties
+  → Partner with CA firms (they can recommend to landlord clients)
+  → Partner with PG listing sites (NoBroker, Zolo — or compete with them)
+  → College placement cells and student housing offices
+  → Furniture rental companies (Furlenco, Rentomojo) — cross-promotion
+
+========================================================
+⚔️ COMPETITIVE LANDSCAPE
+========================================================
+
+  DIRECT COMPETITORS (India):
+  → RentTrack, RentManager India — basic, poor UI, limited features
+  → NoBroker: focused on listing/discovery, NOT management tools
+  → Zolo, Stanza Living: they ARE PG operators, not software for PG owners
+  → Most are either listing platforms or property management for large builders
+  → NOBODY is building a clean, affordable SaaS for small PG/hostel owners
+
+  INDIRECT COMPETITORS:
+  → WhatsApp + notebook (your REAL competitor — habit, not a product)
+  → Excel/Google Sheets (some tech-savvy owners use this)
+  → Generic accounting software (Tally, Zoho Books — not built for this use case)
+
+  YOUR MOAT:
+  → Purpose-built for Indian rental/PG market (not a generic property tool)
+  → Affordable pricing in INR (not $50/month enterprise software)
+  → UPI/Razorpay native (not Stripe-first with India as afterthought)
+  → WhatsApp + SMS reminders (how India actually communicates)
+  → Regional language support potential (Hindi, Marathi, Tamil, etc.)
+  → Tenant viral loop (every owner = 10-100 new users seeing your brand)
+
+========================================================
+⚠️ RISKS & CHALLENGES
+========================================================
+
+  ❗ Risk: Target users (PG owners) may not be tech-savvy
+  → Mitigation: Dead-simple UI. Phone OTP login. WhatsApp support.
+     Video tutorials in Hindi. Personal onboarding for early users.
+
+  ❗ Risk: "Why should I pay when WhatsApp is free?"
+  → Mitigation: Show them the math. Time saved × 30 days = worth ₹299.
+     Auto rent receipts save their tenants tax money.
+     They look professional. Tenants prefer PGs with digital systems.
+
+  ❗ Risk: Low willingness to pay in Indian SMB market
+  → Mitigation: Generous free tier to get them hooked. 
+     Make money from transactions (1-2% on rent payments) rather than 
+     subscriptions for price-sensitive users.
+
+  ❗ Risk: On-ground sales effort needed initially
+  → Mitigation: Start in YOUR city only. Don't try to go national on day 1.
+     Build a playbook that works in one city, then replicate.
+
+  ❗ Risk: WhatsApp API costs money
+  → Mitigation: Start with just SMS + email. Add WhatsApp only in paid plans.
+     The cost is ~₹0.50-1 per message, which is covered by subscription revenue.
+
+  ❗ Risk: You haven't personally lived in a PG or rented
+  → Mitigation: Interview 10-15 PG owners before writing a single line of code.
+     Visit PGs. Watch how they work. Ask what they hate about managing tenants.
+     Become obsessed with understanding their workflow.
+     Talk to 10-15 tenants too. What do they wish their PG owner did better?
+
+========================================================
+📅 ROUGH TIMELINE
+========================================================
+
+  MONTH 1:
+  → Research: Visit 10+ PGs, interview owners and tenants
+  → Finalize feature list for MVP
+  → Design database schema
+  → Set up project: repo, CI/CD, hosting, domain
+  → Start building: auth, property setup, room management
+
+  MONTH 2:
+  → Tenant management (add, edit, view tenants)
+  → Rent tracking (manual payment recording)
+  → Basic dashboard (occupancy, rent status)
+  → Rent receipt PDF generation
+
+  MONTH 3:
+  → Automated reminders (email + SMS)
+  → Maintenance request system
+  → Tenant portal (view rent status, download receipts)
+  → Beta launch: onboard 10-20 PG owners for free
+  → Collect feedback aggressively
+
+  MONTH 4-5:
+  → Iterate based on feedback
+  → Add utility billing
+  → Add agreement templates
+  → Improve UI/UX based on real usage patterns
+  → Start SEO content
+
+  MONTH 6:
+  → Online payment integration (Razorpay)
+  → Launch paid plans
+  → Start marketing: social media, local outreach
+  → Target: 50-100 active properties on platform
+
+  MONTH 7-12:
+  → Mobile app or PWA
+  → Advanced features: reports, multi-property, staff accounts
+  → Vacancy listing pages
+  → Scale to 2-3 cities
+  → Target: 500+ active properties, first ₹1 lakh/month revenue
+
+========================================================
+💡 PRODUCT PRINCIPLES
+========================================================
+
+  ✅ SIMPLE OVER POWERFUL — PG owners are not power users. Every feature
+     should be usable by someone who only knows WhatsApp and YouTube.
+
+  ✅ MOBILE-FIRST — They will use this on their phone 90% of the time.
+     Design for 6-inch screens first. Desktop second.
+
+  ✅ WHATSAPP IS THE BENCHMARK — If your notification system is harder
+     to use than just sending a WhatsApp message, you've lost.
+
+  ✅ SHOW THE MONEY — Always surface: "You've collected ₹X this month,
+     ₹Y is pending from Z tenants." Money motivates action.
+
+  ✅ NO TRAINING NEEDED — If a feature needs a tutorial, redesign it.
+
+  ✅ TRUST THROUGH RECEIPTS — The rent receipt feature alone will drive
+     adoption. Tenants WANT receipts. They'll push their landlords to use
+     your platform.
+
+  ✅ DATA PORTABILITY — Let owners export everything to Excel anytime.
+     No lock-in feeling = more trust = more willingness to commit.
+
+========================================================
+🎯 SUCCESS METRICS TO TRACK
+========================================================
+
+  → Properties onboarded (total & monthly growth)
+  → Active properties (used the platform in last 30 days)
+  → Tenants on platform
+  → Rent marked/collected through platform (volume)
+  → Online payments processed (volume & transaction revenue)
+  → Retention rate (do owners keep using it month over month?)
+  → Receipts generated (indicates tenant engagement)
+  → Maintenance requests raised (indicates tenant adoption)
+  → Free → Paid conversion rate
+  → Net Promoter Score (would you recommend TenantEase?)
+
+========================================================
+🔥 THE BOTTOM LINE
+========================================================
+
+  This is not a "sexy" startup idea.
+  Nobody will tweet about it.
+  No VC will get excited in a pitch meeting.
+
+  But that's exactly why it works.
+
+  → Low competition
+  → Real, painful, daily problem
+  → Massive underserved market
+  → Sticky product (once set up, they never leave)
+  → Built-in viral loop (owners bring tenants)
+  → Multiple revenue streams
+  → Can start small (one city) and scale methodically
+
+  The best businesses are often boring ones that solve
+  unglamorous problems really, really well.
+
+  You don't need to build the next Instagram.
+  You need to build the thing that makes a PG owner's
+  life 10x easier and saves them 5 hours every week.
+
+  That's TenantEase.
+
+========================================================

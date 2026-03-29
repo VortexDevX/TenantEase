@@ -1,0 +1,234 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  OWNER
+}
+
+enum PropertyType {
+  PG
+  HOSTEL
+  FLAT
+  HOUSE
+}
+
+enum RoomType {
+  SINGLE
+  DOUBLE
+  TRIPLE
+  DORMITORY
+}
+
+enum RoomStatus {
+  VACANT
+  PARTIAL
+  OCCUPIED
+}
+
+enum TenantStatus {
+  ACTIVE
+  NOTICE
+  VACATED
+}
+
+enum RentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  OVERDUE
+}
+
+enum PaymentMode {
+  CASH
+  UPI
+  BANK_TRANSFER
+}
+
+model User {
+  id            String         @id @default(uuid())
+  phone         String         @unique
+  role          UserRole       @default(OWNER)
+  ownerProfile  OwnerProfile?
+  refreshTokens RefreshToken[]
+  otpChallenges OtpChallenge[]
+  auditLogs     AuditLog[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model OwnerProfile {
+  id          String     @id @default(uuid())
+  userId      String     @unique
+  displayName String?
+  companyName String?
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  properties  Property[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Property {
+  id             String       @id @default(uuid())
+  ownerProfileId String
+  name           String
+  address        String
+  city           String
+  state          String
+  pinCode        String
+  type           PropertyType
+  ownerProfile   OwnerProfile @relation(fields: [ownerProfileId], references: [id], onDelete: Cascade)
+  rooms          Room[]
+  tenants        Tenant[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([ownerProfileId])
+}
+
+model Room {
+  id            String     @id @default(uuid())
+  propertyId    String
+  roomNumber    String
+  type          RoomType
+  bedCount      Int
+  occupiedBeds  Int        @default(0)
+  monthlyRent   Int
+  depositAmount Int
+  status        RoomStatus @default(VACANT)
+  property      Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenants       Tenant[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@unique([propertyId, roomNumber])
+  @@index([propertyId])
+}
+
+model Tenant {
+  id          String          @id @default(uuid())
+  propertyId  String
+  roomId      String
+  fullName    String
+  phone       String
+  email       String?
+  status      TenantStatus    @default(ACTIVE)
+  moveInDate  DateTime
+  noticeDate  DateTime?
+  vacatedAt   DateTime?
+  monthlyRent Int
+  depositPaid Int
+  property    Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  room        Room            @relation(fields: [roomId], references: [id])
+  documents   TenantDocument[]
+  rentEntries RentEntry[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([propertyId])
+  @@index([roomId])
+}
+
+model TenantDocument {
+  id         String   @id @default(uuid())
+  tenantId   String
+  fileName   String
+  mimeType   String
+  storageKey String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+model RentEntry {
+  id           String      @id @default(uuid())
+  tenantId     String
+  billingMonth String
+  dueDate      DateTime
+  amountDue    Int
+  amountPaid   Int         @default(0)
+  status       RentStatus  @default(UNPAID)
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payments     Payment[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([tenantId, billingMonth])
+  @@index([tenantId])
+  @@index([billingMonth])
+}
+
+model Payment {
+  id          String      @id @default(uuid())
+  rentEntryId String
+  amount      Int
+  mode        PaymentMode
+  paidAt      DateTime
+  note        String?
+  isVoided    Boolean     @default(false)
+  voidedAt    DateTime?
+  rentEntry   RentEntry   @relation(fields: [rentEntryId], references: [id], onDelete: Cascade)
+  receipt     Receipt?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([rentEntryId])
+}
+
+model Receipt {
+  id            String   @id @default(uuid())
+  paymentId     String   @unique
+  receiptNumber String   @unique
+  filePath      String
+  generatedAt   DateTime @default(now())
+  payment       Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model OtpChallenge {
+  id         String   @id @default(uuid())
+  userId     String?
+  phone      String
+  otpHash    String
+  expiresAt  DateTime
+  attempts   Int      @default(0)
+  consumedAt DateTime?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+
+  @@index([phone])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  action      String
+  resource    String
+  resourceId  String?
+  payloadJson Json?
+  ipAddress   String?
+  userAgent   String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([resource, resourceId])
+}
+

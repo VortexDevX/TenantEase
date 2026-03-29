@@ -1,0 +1,18 @@
+{
+  "name": "tenant-ease",
+  "private": true,
+  "packageManager": "pnpm@10.8.0",
+  "scripts": {
+    "dev": "corepack pnpm --parallel --filter @tenantease/api --filter @tenantease/web dev",
+    "dev:api": "corepack pnpm --filter @tenantease/api dev",
+    "dev:web": "corepack pnpm --filter @tenantease/web dev",
+    "build": "corepack pnpm -r build",
+    "lint": "corepack pnpm -r lint",
+    "typecheck": "corepack pnpm -r typecheck",
+    "test": "corepack pnpm -r test",
+    "test:api": "corepack pnpm --filter @tenantease/api test",
+    "prisma:generate": "corepack pnpm --filter @tenantease/api prisma:generate",
+    "prisma:migrate": "corepack pnpm --filter @tenantease/api prisma:migrate",
+    "prisma:seed": "corepack pnpm --filter @tenantease/api prisma:seed"
+  }
+}
