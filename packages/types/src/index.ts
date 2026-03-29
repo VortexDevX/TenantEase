@@ -13,10 +13,13 @@ export type ApiErrorCode =
   | "RENT_ENTRY_NOT_FOUND"
   | "PAYMENT_NOT_FOUND"
   | "RECEIPT_NOT_FOUND"
+  | "REQUEST_NOT_FOUND"
+  | "INVALID_MAINTENANCE_TRANSITION"
   | "ROOM_NO_VACANCY"
   | "ROOM_HAS_TENANTS"
   | "TENANT_ALREADY_VACATED"
   | "INVALID_TRANSFER"
+  | "PAYMENT_TOO_OLD"
   | "RATE_LIMITED"
   | "INTERNAL_ERROR";
 
@@ -54,6 +57,9 @@ export type RoomStatus = "VACANT" | "PARTIAL" | "OCCUPIED";
 export type TenantStatus = "ACTIVE" | "NOTICE" | "VACATED";
 export type RentStatus = "UNPAID" | "PARTIAL" | "PAID" | "OVERDUE";
 export type PaymentMode = "CASH" | "UPI" | "BANK_TRANSFER";
+export type MaintenanceCategory = "PLUMBING" | "ELECTRICAL" | "FURNITURE" | "INTERNET" | "CLEANING" | "OTHER";
+export type MaintenanceUrgency = "LOW" | "MEDIUM" | "HIGH" | "EMERGENCY";
+export type MaintenanceStatus = "NEW" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
 
 export type AuthUser = {
   id: string;
@@ -129,10 +135,49 @@ export type ReceiptDto = {
   generatedAt: string;
 };
 
+export type MaintenanceRequestDto = {
+  id: string;
+  requestNumber: string;
+  propertyId: string;
+  tenantId: string;
+  tenantName: string;
+  roomNumber: string;
+  category: MaintenanceCategory;
+  description: string;
+  urgency: MaintenanceUrgency;
+  status: MaintenanceStatus;
+  assignedWorkerName: string | null;
+  assignedWorkerPhone: string | null;
+  preferredTime: string | null;
+  resolutionNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MaintenanceCommentDto = {
+  id: string;
+  requestId: string;
+  content: string;
+  isInternal: boolean;
+  createdAt: string;
+};
+
+export type MaintenanceSummaryDto = {
+  new: number;
+  inProgress: number;
+  resolved: number;
+  closed: number;
+  total: number;
+};
+
+export type MaintenanceDetailDto = {
+  request: MaintenanceRequestDto;
+  comments: MaintenanceCommentDto[];
+};
+
 export type OtpVerifyResponse = {
   accessToken: string;
   refreshToken: string;
   user: AuthUser;
   isNewUser: boolean;
 };
-

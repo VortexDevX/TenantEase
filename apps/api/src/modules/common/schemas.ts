@@ -59,6 +59,29 @@ export const paymentUpdateSchema = z.object({
   isVoided: z.boolean().optional()
 });
 
+export const maintenanceCreateSchema = z.object({
+  tenantId: uuidSchema,
+  propertyId: uuidSchema,
+  category: z.enum(["PLUMBING", "ELECTRICAL", "FURNITURE", "INTERNET", "CLEANING", "OTHER"]),
+  description: z.string().min(10).max(2000),
+  urgency: z.enum(["LOW", "MEDIUM", "HIGH", "EMERGENCY"]).default("MEDIUM"),
+  preferredTime: z.string().max(30).optional().nullable()
+});
+
+export const maintenanceUpdateSchema = z.object({
+  status: z.enum(["NEW", "IN_PROGRESS", "RESOLVED", "CLOSED"]).optional(),
+  assignedWorkerName: z.string().max(100).optional().nullable(),
+  assignedWorkerPhone: z.string().regex(/^\d{10}$/).optional().nullable(),
+  comment: z.string().min(1).max(1000).optional(),
+  isInternalNote: z.boolean().optional().default(false),
+  resolutionNotes: z.string().max(1000).optional().nullable()
+});
+
+export const maintenanceCommentSchema = z.object({
+  content: z.string().min(1).max(1000),
+  isInternal: z.boolean().optional().default(false)
+});
+
 export const otpSendSchema = z.object({
   phone: z.string().regex(/^\d{10}$/)
 });
@@ -73,4 +96,3 @@ export const profileSchema = z.object({
   displayName: z.string().min(2).max(80).optional(),
   companyName: z.string().min(2).max(80).optional()
 });
-

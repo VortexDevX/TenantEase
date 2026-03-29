@@ -4,6 +4,8 @@ import rateLimit from "@fastify/rate-limit";
 import { env } from "./lib/env.js";
 import { AppError } from "./lib/errors.js";
 import { authRoutes } from "./modules/auth/routes.js";
+import { docsRoutes } from "./modules/docs/routes.js";
+import { maintenanceRoutes } from "./modules/maintenance/routes.js";
 import { paymentRoutes } from "./modules/payments/routes.js";
 import { propertyRoutes } from "./modules/properties/routes.js";
 import { receiptRoutes } from "./modules/receipts/routes.js";
@@ -34,10 +36,12 @@ export function createApp() {
   }));
 
   app.register(authRoutes);
+  app.register(docsRoutes);
   app.register(propertyRoutes);
   app.register(roomRoutes);
   app.register(tenantRoutes);
   app.register(rentRoutes);
+  app.register(maintenanceRoutes);
   app.register(paymentRoutes);
   app.register(receiptRoutes);
 

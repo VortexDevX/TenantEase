@@ -50,6 +50,29 @@ enum PaymentMode {
   BANK_TRANSFER
 }
 
+enum MaintenanceCategory {
+  PLUMBING
+  ELECTRICAL
+  FURNITURE
+  INTERNET
+  CLEANING
+  OTHER
+}
+
+enum MaintenanceUrgency {
+  LOW
+  MEDIUM
+  HIGH
+  EMERGENCY
+}
+
+enum MaintenanceStatus {
+  NEW
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
 model User {
   id            String         @id @default(uuid())
   phone         String         @unique
@@ -58,6 +81,7 @@ model User {
   refreshTokens RefreshToken[]
   otpChallenges OtpChallenge[]
   auditLogs     AuditLog[]
+  maintenanceComments MaintenanceComment[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 }
@@ -85,6 +109,7 @@ model Property {
   ownerProfile   OwnerProfile @relation(fields: [ownerProfileId], references: [id], onDelete: Cascade)
   rooms          Room[]
   tenants        Tenant[]
+  maintenanceRequests MaintenanceRequest[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -127,6 +152,7 @@ model Tenant {
   room        Room            @relation(fields: [roomId], references: [id])
   documents   TenantDocument[]
   rentEntries RentEntry[]
+  maintenanceRequests MaintenanceRequest[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
@@ -190,6 +216,44 @@ model Receipt {
   payment       Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 }
 
+model MaintenanceRequest {
+  id                  String               @id @default(uuid())
+  requestNumber       String               @unique
+  propertyId          String
+  tenantId            String
+  category            MaintenanceCategory
+  description         String
+  urgency             MaintenanceUrgency   @default(MEDIUM)
+  status              MaintenanceStatus    @default(NEW)
+  assignedWorkerName  String?
+  assignedWorkerPhone String?
+  preferredTime       String?
+  resolutionNotes     String?
+  property            Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  comments            MaintenanceComment[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@index([propertyId])
+  @@index([tenantId])
+  @@index([status])
+}
+
+model MaintenanceComment {
+  id           String             @id @default(uuid())
+  requestId     String
+  authorUserId  String?
+  content       String
+  isInternal    Boolean            @default(false)
+  request       MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  authorUser    User?              @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+  createdAt     DateTime           @default(now())
+
+  @@index([requestId])
+  @@index([authorUserId])
+}
+
 model RefreshToken {
   id        String   @id @default(uuid())
   userId    String
@@ -231,4 +295,3 @@ model AuditLog {
   @@index([userId])
   @@index([resource, resourceId])
 }
-

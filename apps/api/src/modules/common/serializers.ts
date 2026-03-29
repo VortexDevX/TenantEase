@@ -1,4 +1,6 @@
 import type {
+  MaintenanceCommentDto,
+  MaintenanceRequestDto,
   PaymentDto,
   PropertyDto,
   ReceiptDto,
@@ -8,6 +10,9 @@ import type {
 } from "@tenantease/types";
 import type {
   PaymentMode,
+  MaintenanceCategory,
+  MaintenanceStatus,
+  MaintenanceUrgency,
   PropertyType,
   RentStatus,
   RoomStatus,
@@ -122,3 +127,58 @@ export function toReceiptDto(input: {
   };
 }
 
+export function toMaintenanceRequestDto(input: {
+  id: string;
+  requestNumber: string;
+  propertyId: string;
+  tenantId: string;
+  category: MaintenanceCategory;
+  description: string;
+  urgency: MaintenanceUrgency;
+  status: MaintenanceStatus;
+  assignedWorkerName: string | null;
+  assignedWorkerPhone: string | null;
+  preferredTime: string | null;
+  resolutionNotes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  tenant: {
+    fullName: string;
+    room: { roomNumber: string };
+  };
+}): MaintenanceRequestDto {
+  return {
+    id: input.id,
+    requestNumber: input.requestNumber,
+    propertyId: input.propertyId,
+    tenantId: input.tenantId,
+    tenantName: input.tenant.fullName,
+    roomNumber: input.tenant.room.roomNumber,
+    category: input.category,
+    description: input.description,
+    urgency: input.urgency,
+    status: input.status,
+    assignedWorkerName: input.assignedWorkerName,
+    assignedWorkerPhone: input.assignedWorkerPhone,
+    preferredTime: input.preferredTime,
+    resolutionNotes: input.resolutionNotes,
+    createdAt: input.createdAt.toISOString(),
+    updatedAt: input.updatedAt.toISOString()
+  };
+}
+
+export function toMaintenanceCommentDto(input: {
+  id: string;
+  requestId: string;
+  content: string;
+  isInternal: boolean;
+  createdAt: Date;
+}): MaintenanceCommentDto {
+  return {
+    id: input.id,
+    requestId: input.requestId,
+    content: input.content,
+    isInternal: input.isInternal,
+    createdAt: input.createdAt.toISOString()
+  };
+}

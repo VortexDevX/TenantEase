@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
+import { createAuditLog } from "../common/audit.js";
 import { assertPropertyOwnership } from "../common/owner.js";
 import { roomInputSchema } from "../common/schemas.js";
 import { toRoomDto } from "../common/serializers.js";
@@ -28,6 +29,15 @@ export async function roomRoutes(app: FastifyInstance) {
         propertyId: params.propertyId,
         status: roomStatusFromOccupancy(body.bedCount, 0)
       }
+    });
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "room.create",
+      resource: "Room",
+      resourceId: room.id,
+      payload: body,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
     });
     return ok(toRoomDto(room));
   });
@@ -68,6 +78,15 @@ export async function roomRoutes(app: FastifyInstance) {
         status: roomStatusFromOccupancy(body.bedCount, room.occupiedBeds)
       }
     });
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "room.update",
+      resource: "Room",
+      resourceId: updated.id,
+      payload: body,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
     return ok(toRoomDto(updated));
   });
 
@@ -86,7 +105,14 @@ export async function roomRoutes(app: FastifyInstance) {
       throw new AppError(422, "ROOM_HAS_TENANTS", "Cannot delete room with active tenants");
     }
     await prisma.room.delete({ where: { id: room.id } });
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "room.delete",
+      resource: "Room",
+      resourceId: room.id,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
     return ok({ deleted: true });
   });
 }
-

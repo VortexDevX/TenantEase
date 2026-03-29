@@ -3,6 +3,7 @@ import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
 import { localStorageProvider } from "../../providers/mock-providers.js";
+import { createAuditLog } from "../common/audit.js";
 import { toReceiptDto } from "../common/serializers.js";
 import { generateReceipt } from "./service.js";
 
@@ -13,6 +14,15 @@ export async function receiptRoutes(app: FastifyInstance) {
       throw new AppError(400, "VALIDATION_ERROR", "paymentId is required");
     }
     const receipt = await generateReceipt(body.paymentId, request.user.ownerProfileId);
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "receipt.generate",
+      resource: "Receipt",
+      resourceId: receipt.id,
+      payload: { paymentId: body.paymentId },
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
     return ok(toReceiptDto(receipt));
   });
 
@@ -62,4 +72,3 @@ export async function receiptRoutes(app: FastifyInstance) {
     return ok(receipts.map(toReceiptDto));
   });
 }
-

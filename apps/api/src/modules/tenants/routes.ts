@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
+import { createAuditLog } from "../common/audit.js";
 import { assertPropertyOwnership } from "../common/owner.js";
 import {
   paginationSchema,
@@ -67,6 +68,15 @@ export async function tenantRoutes(app: FastifyInstance) {
     });
 
     await recalculateRoom(body.roomId);
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "tenant.create",
+      resource: "Tenant",
+      resourceId: tenant.id,
+      payload: body,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
     return ok(toTenantDto(tenant));
   });
 
@@ -110,6 +120,15 @@ export async function tenantRoutes(app: FastifyInstance) {
         depositPaid: body.depositPaid
       }
     });
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "tenant.update",
+      resource: "Tenant",
+      resourceId: tenant.id,
+      payload: body,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
 
     return ok(toTenantDto(tenant));
   });
@@ -141,6 +160,15 @@ export async function tenantRoutes(app: FastifyInstance) {
     });
 
     await recalculateRoom(tenant.roomId);
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "tenant.vacate",
+      resource: "Tenant",
+      resourceId: updated.id,
+      payload: body,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
     return ok(toTenantDto(updated));
   });
 
@@ -170,7 +198,15 @@ export async function tenantRoutes(app: FastifyInstance) {
     });
 
     await Promise.all([recalculateRoom(tenant.roomId), recalculateRoom(body.roomId)]);
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "tenant.transfer",
+      resource: "Tenant",
+      resourceId: updated.id,
+      payload: { fromRoomId: tenant.roomId, toRoomId: body.roomId },
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
     return ok(toTenantDto(updated));
   });
 }
-

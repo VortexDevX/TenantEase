@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { PrismaClient, PropertyType, RoomType } from "@prisma/client";
 
 const prisma = new PrismaClient();
@@ -74,4 +75,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-

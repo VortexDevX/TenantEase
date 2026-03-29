@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
+import { createAuditLog } from "../common/audit.js";
 import { assertPropertyOwnership } from "../common/owner.js";
 import { propertyInputSchema } from "../common/schemas.js";
 import { toPropertyDto } from "../common/serializers.js";
@@ -33,6 +34,15 @@ export async function propertyRoutes(app: FastifyInstance) {
           select: { bedCount: true, occupiedBeds: true }
         }
       }
+    });
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "property.create",
+      resource: "Property",
+      resourceId: property.id,
+      payload: body,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
     });
 
     return ok(toPropertyDto(property));
@@ -69,8 +79,16 @@ export async function propertyRoutes(app: FastifyInstance) {
         }
       }
     });
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "property.update",
+      resource: "Property",
+      resourceId: property.id,
+      payload: body,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
 
     return ok(toPropertyDto(property));
   });
 }
-

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
+import { createAuditLog } from "../common/audit.js";
 import { otpSendSchema, otpVerifySchema, profileSchema } from "../common/schemas.js";
 import { rotateRefreshToken, revokeRefreshToken, sendOtp, verifyOtp } from "./service.js";
 
@@ -17,7 +18,16 @@ function signAccessToken(app: FastifyInstance, user: { id: string; phone: string
 export async function authRoutes(app: FastifyInstance) {
   app.post("/auth/send-otp", async (request) => {
     const body = otpSendSchema.parse(request.body);
-    return ok(await sendOtp(body.phone));
+    const result = await sendOtp(body.phone);
+    await createAuditLog({
+      action: "auth.send_otp",
+      resource: "OtpChallenge",
+      resourceId: result.challengeId,
+      payload: { phone: body.phone },
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
+    return ok(result);
   });
 
   app.post("/auth/verify-otp", async (request) => {
@@ -26,6 +36,15 @@ export async function authRoutes(app: FastifyInstance) {
     const accessToken = signAccessToken(app, {
       ...result.user,
       ownerProfile: result.user.ownerProfile!
+    });
+    await createAuditLog({
+      userId: result.user.id,
+      action: "auth.verify_otp",
+      resource: "User",
+      resourceId: result.user.id,
+      payload: { isNewUser: result.isNewUser },
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
     });
 
     return ok({
@@ -69,6 +88,13 @@ export async function authRoutes(app: FastifyInstance) {
     if (body?.refreshToken) {
       await revokeRefreshToken(body.refreshToken);
     }
+    await createAuditLog({
+      userId: request.user?.sub ?? null,
+      action: "auth.logout",
+      resource: "RefreshToken",
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
     return ok({ loggedOut: true });
   });
 
@@ -100,6 +126,15 @@ export async function authRoutes(app: FastifyInstance) {
         displayName: body.displayName,
         companyName: body.companyName
       }
+    });
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "owner.complete_profile",
+      resource: "OwnerProfile",
+      resourceId: profile.id,
+      payload: body,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
     });
 
     return ok(profile);

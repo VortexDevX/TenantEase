@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
+import { createAuditLog } from "../common/audit.js";
 import { paymentInputSchema, paymentUpdateSchema } from "../common/schemas.js";
 import { toPaymentDto } from "../common/serializers.js";
 import { recalculateRentEntry } from "../rent/service.js";
@@ -33,6 +34,15 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
 
     await recalculateRentEntry(body.rentEntryId);
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "payment.create",
+      resource: "Payment",
+      resourceId: payment.id,
+      payload: body,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
     return ok(toPaymentDto(payment));
   });
 
@@ -70,6 +80,12 @@ export async function paymentRoutes(app: FastifyInstance) {
       throw new AppError(404, "PAYMENT_NOT_FOUND", "Payment not found");
     }
 
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setUTCDate(ninetyDaysAgo.getUTCDate() - 90);
+    if (payment.paidAt < ninetyDaysAgo) {
+      throw new AppError(422, "PAYMENT_TOO_OLD", "Cannot edit payment older than 90 days");
+    }
+
     const updated = await prisma.payment.update({
       where: { id: payment.id },
       data: {
@@ -82,7 +98,15 @@ export async function paymentRoutes(app: FastifyInstance) {
     });
 
     await recalculateRentEntry(updated.rentEntryId);
+    await createAuditLog({
+      userId: request.user.sub,
+      action: body.isVoided ? "payment.void" : "payment.update",
+      resource: "Payment",
+      resourceId: updated.id,
+      payload: body,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
     return ok(toPaymentDto(updated));
   });
 }
-
