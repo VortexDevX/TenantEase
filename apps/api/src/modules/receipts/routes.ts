@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
-import { localStorageProvider } from "../../providers/mock-providers.js";
+import { storageProvider } from "../../providers/mock-providers.js";
 import { createAuditLog } from "../common/audit.js";
 import { toReceiptDto } from "../common/serializers.js";
 import { generateReceipt } from "./service.js";
@@ -45,7 +45,7 @@ export async function receiptRoutes(app: FastifyInstance) {
       throw new AppError(404, "RECEIPT_NOT_FOUND", "Receipt not found");
     }
 
-    const buffer = await localStorageProvider.readBuffer(receipt.filePath);
+    const buffer = await storageProvider.readBuffer(receipt.filePath);
     reply
       .header("content-type", "application/pdf")
       .header("content-disposition", `inline; filename="${receipt.receiptNumber}.pdf"`);

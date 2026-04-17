@@ -4,8 +4,7 @@
 
 📌 Tagline: "Smart Property & Tenant Management for India's PG Owners, Hostel Managers & Landlords"
 
-📌 One-liner: A web + mobile platform that replaces notebooks, WhatsApp groups,
-and mental math for anyone who rents out rooms, flats, PGs, or hostels in India.
+📌 One-liner: A web + mobile platform that replaces notebooks, WhatsApp groups, and mental math for anyone who rents out rooms, flats, PGs, or hostels in India.
 
 ========================================================
 🔴 THE PROBLEM

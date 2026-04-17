@@ -6,12 +6,22 @@ import { createAuditLog } from "../common/audit.js";
 import { otpSendSchema, otpVerifySchema, profileSchema } from "../common/schemas.js";
 import { rotateRefreshToken, revokeRefreshToken, sendOtp, verifyOtp } from "./service.js";
 
-function signAccessToken(app: FastifyInstance, user: { id: string; phone: string; ownerProfile: { id: string } }) {
+function signAccessToken(
+  app: FastifyInstance,
+  payload: {
+    userId: string;
+    phone: string;
+    role: "ADMIN" | "OWNER" | "TENANT";
+    ownerProfileId?: string;
+    tenantId?: string;
+  }
+) {
   return app.jwt.sign({
-    sub: user.id,
-    phone: user.phone,
-    role: "OWNER",
-    ownerProfileId: user.ownerProfile.id
+    sub: payload.userId,
+    phone: payload.phone,
+    role: payload.role,
+    ownerProfileId: payload.ownerProfileId,
+    tenantId: payload.tenantId
   });
 }
 
@@ -30,19 +40,25 @@ export async function authRoutes(app: FastifyInstance) {
     return ok(result);
   });
 
+  // Unified verify — backend auto-detects role
   app.post("/auth/verify-otp", async (request) => {
     const body = otpVerifySchema.parse(request.body);
     const result = await verifyOtp(body.phone, body.otp, body.challengeId);
+
     const accessToken = signAccessToken(app, {
-      ...result.user,
-      ownerProfile: result.user.ownerProfile!
+      userId: result.user.id,
+      phone: result.user.phone,
+      role: result.resolvedRole,
+      ownerProfileId: result.ownerProfileId,
+      tenantId: result.tenantId
     });
+
     await createAuditLog({
       userId: result.user.id,
       action: "auth.verify_otp",
       resource: "User",
       resourceId: result.user.id,
-      payload: { isNewUser: result.isNewUser },
+      payload: { isNewUser: result.isNewUser, resolvedRole: result.resolvedRole },
       ipAddress: request.ip,
       userAgent: request.headers["user-agent"]?.toString()
     });
@@ -53,8 +69,9 @@ export async function authRoutes(app: FastifyInstance) {
       user: {
         id: result.user.id,
         phone: result.user.phone,
-        role: "OWNER" as const,
-        ownerProfileId: result.user.ownerProfile!.id
+        role: result.resolvedRole,
+        ownerProfileId: result.ownerProfileId,
+        tenantId: result.tenantId
       },
       isNewUser: result.isNewUser
     });
@@ -66,19 +83,24 @@ export async function authRoutes(app: FastifyInstance) {
       throw new AppError(401, "AUTH_INVALID_TOKEN", "Refresh token is required");
     }
     const result = await rotateRefreshToken(body.refreshToken);
+
     const accessToken = signAccessToken(app, {
-      id: result.user.id,
+      userId: result.user.id,
       phone: result.user.phone,
-      ownerProfile: result.user.ownerProfile!
+      role: result.resolvedRole,
+      ownerProfileId: result.ownerProfileId,
+      tenantId: result.tenantId
     });
+
     return ok({
       accessToken,
       refreshToken: result.refreshToken,
       user: {
         id: result.user.id,
         phone: result.user.phone,
-        role: "OWNER" as const,
-        ownerProfileId: result.user.ownerProfile!.id
+        role: result.resolvedRole,
+        ownerProfileId: result.ownerProfileId,
+        tenantId: result.tenantId
       }
     });
   });
@@ -98,14 +120,46 @@ export async function authRoutes(app: FastifyInstance) {
     return ok({ loggedOut: true });
   });
 
-  app.get("/auth/me", { preHandler: [app.authenticate] }, async (request) => {
+  // GET /auth/me — works for all roles
+  app.get("/auth/me", { preHandler: [app.authenticateAny] }, async (request) => {
+    const { role } = request.user;
+
+    if (role === "ADMIN") {
+      const user = await prisma.user.findUnique({ where: { id: request.user.sub } });
+      if (!user) throw new AppError(404, "NOT_FOUND", "User not found");
+      return ok({
+        id: user.id,
+        phone: user.phone,
+        role: "ADMIN" as const
+      });
+    }
+
+    if (role === "TENANT") {
+      let tenantData = null;
+      if (request.user.tenantId) {
+        tenantData = await prisma.tenant.findUnique({
+          where: { id: request.user.tenantId },
+          select: { id: true, fullName: true, roomId: true, propertyId: true }
+        });
+      }
+      return ok({
+        id: request.user.sub,
+        phone: request.user.phone,
+        role: "TENANT" as const,
+        tenantId: tenantData?.id ?? null,
+        fullName: tenantData?.fullName ?? null,
+        hasBooking: !!tenantData
+      });
+    }
+
+    // OWNER
     const user = await prisma.user.findUnique({
       where: { id: request.user.sub },
       include: { ownerProfile: true }
     });
 
     if (!user?.ownerProfile) {
-      throw new AppError(404, "NOT_FOUND", "User not found");
+      throw new AppError(404, "NOT_FOUND", "Owner not found");
     }
 
     return ok({
@@ -118,6 +172,7 @@ export async function authRoutes(app: FastifyInstance) {
     });
   });
 
+  // PUT /auth/complete-profile — OWNER only
   app.put("/auth/complete-profile", { preHandler: [app.authenticate] }, async (request) => {
     const body = profileSchema.parse(request.body);
     const profile = await prisma.ownerProfile.update({

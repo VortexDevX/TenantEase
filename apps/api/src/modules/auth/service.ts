@@ -28,6 +28,15 @@ export async function sendOtp(phone: string) {
   };
 }
 
+/**
+ * Unified OTP verification — auto-detects role from database state.
+ *
+ * Role resolution order:
+ *   1. user.role === ADMIN (set manually in DB) → ADMIN
+ *   2. user has OwnerProfile → OWNER
+ *   3. Tenant record exists for phone → TENANT
+ *   4. New user (no records) → TENANT (default)
+ */
 export async function verifyOtp(phone: string, otp: string, challengeId: string) {
   const challenge = await prisma.otpChallenge.findFirst({
     where: {
@@ -69,9 +78,7 @@ export async function verifyOtp(phone: string, otp: string, challengeId: string)
       user = await tx.user.create({
         data: {
           phone,
-          ownerProfile: {
-            create: {}
-          }
+          role: "TENANT"
         },
         include: { ownerProfile: true }
       });
@@ -91,11 +98,27 @@ export async function verifyOtp(phone: string, otp: string, challengeId: string)
       }
     });
 
-    if (!user.ownerProfile) {
-      throw new AppError(500, "INTERNAL_ERROR", "Owner profile is missing");
+    // --- Role resolution ---
+    let resolvedRole: "ADMIN" | "OWNER" | "TENANT" = "TENANT";
+    let ownerProfileId: string | undefined;
+    let tenantId: string | undefined;
+
+    if (user.role === "ADMIN") {
+      resolvedRole = "ADMIN";
+    } else if (user.ownerProfile) {
+      resolvedRole = "OWNER";
+      ownerProfileId = user.ownerProfile.id;
+    } else {
+      // Check if there's an active tenant booking for this phone
+      const tenant = await tx.tenant.findFirst({
+        where: { phone, status: { in: ["ACTIVE", "NOTICE"] } },
+        orderBy: { createdAt: "desc" }
+      });
+      resolvedRole = "TENANT";
+      tenantId = tenant?.id;
     }
 
-    return { isNewUser, user, refreshToken };
+    return { isNewUser, user, resolvedRole, ownerProfileId, tenantId, refreshToken };
   });
 
   return result;
@@ -130,7 +153,7 @@ export async function rotateRefreshToken(rawToken: string) {
     }
   });
 
-  if (!existing || !existing.user.ownerProfile) {
+  if (!existing) {
     throw new AppError(401, "AUTH_INVALID_TOKEN", "Refresh token is invalid");
   }
 
@@ -150,9 +173,30 @@ export async function rotateRefreshToken(rawToken: string) {
     })
   ]);
 
+  // Resolve role for token re-signing
+  let resolvedRole: "ADMIN" | "OWNER" | "TENANT" = "TENANT";
+  let ownerProfileId: string | undefined;
+  let tenantId: string | undefined;
+
+  if (existing.user.role === "ADMIN") {
+    resolvedRole = "ADMIN";
+  } else if (existing.user.ownerProfile) {
+    resolvedRole = "OWNER";
+    ownerProfileId = existing.user.ownerProfile.id;
+  } else {
+    const tenant = await prisma.tenant.findFirst({
+      where: { phone: existing.user.phone, status: { in: ["ACTIVE", "NOTICE"] } },
+      orderBy: { createdAt: "desc" }
+    });
+    resolvedRole = "TENANT";
+    tenantId = tenant?.id;
+  }
+
   return {
     user: existing.user,
+    resolvedRole,
+    ownerProfileId,
+    tenantId,
     refreshToken: nextToken
   };
 }
-

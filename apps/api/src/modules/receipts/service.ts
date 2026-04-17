@@ -1,6 +1,6 @@
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
-import { localStorageProvider, pdfProvider } from "../../providers/mock-providers.js";
+import { storageProvider, pdfProvider } from "../../providers/mock-providers.js";
 
 export async function generateReceipt(paymentId: string, ownerProfileId: string) {
   const payment = await prisma.payment.findFirst({
@@ -48,7 +48,7 @@ export async function generateReceipt(paymentId: string, ownerProfileId: string)
     mode: payment.mode
   });
 
-  const filePath = await localStorageProvider.saveBuffer(`receipts/${receiptNumber}.pdf`, pdf);
+  const filePath = await storageProvider.saveBuffer(`receipts/${receiptNumber}.pdf`, pdf);
 
   return prisma.receipt.create({
     data: {

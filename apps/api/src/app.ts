@@ -3,14 +3,19 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { env } from "./lib/env.js";
 import { AppError } from "./lib/errors.js";
+import { adminRoutes } from "./modules/admin/routes.js";
 import { authRoutes } from "./modules/auth/routes.js";
 import { docsRoutes } from "./modules/docs/routes.js";
 import { maintenanceRoutes } from "./modules/maintenance/routes.js";
 import { paymentRoutes } from "./modules/payments/routes.js";
 import { propertyRoutes } from "./modules/properties/routes.js";
 import { receiptRoutes } from "./modules/receipts/routes.js";
+import { remindersRoutes } from "./modules/reminders/routes.js";
 import { rentRoutes } from "./modules/rent/routes.js";
 import { roomRoutes } from "./modules/rooms/routes.js";
+import { systemRoutes } from "./modules/system/routes.js";
+import { dashboardRoutes } from "./modules/dashboard/routes.js";
+import { tenantPortalRoutes } from "./modules/tenant-portal/routes.js";
 import { tenantRoutes } from "./modules/tenants/routes.js";
 import authPlugin from "./plugins/auth.js";
 import requestContextPlugin from "./plugins/request-context.js";
@@ -35,15 +40,20 @@ export function createApp() {
     timestamp: new Date().toISOString()
   }));
 
+  app.register(adminRoutes);
   app.register(authRoutes);
   app.register(docsRoutes);
   app.register(propertyRoutes);
   app.register(roomRoutes);
   app.register(tenantRoutes);
+  app.register(tenantPortalRoutes);
+  app.register(dashboardRoutes);
   app.register(rentRoutes);
+  app.register(remindersRoutes);
   app.register(maintenanceRoutes);
   app.register(paymentRoutes);
   app.register(receiptRoutes);
+  app.register(systemRoutes);
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof AppError) {

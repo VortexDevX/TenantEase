@@ -8,7 +8,9 @@ datasource db {
 }
 
 enum UserRole {
+  ADMIN
   OWNER
+  TENANT
 }
 
 enum PropertyType {
@@ -76,7 +78,7 @@ enum MaintenanceStatus {
 model User {
   id            String         @id @default(uuid())
   phone         String         @unique
-  role          UserRole       @default(OWNER)
+  role          UserRole       @default(TENANT)
   ownerProfile  OwnerProfile?
   refreshTokens RefreshToken[]
   otpChallenges OtpChallenge[]

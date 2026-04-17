@@ -1,0 +1,15 @@
+app/admin/page.tsx(12,15): error TS2305: Module '"@tenantease/types"' has no exported member 'UserDto'.
+app/admin/page.tsx(15,33): error TS2339: Property 'mutate' does not exist on type 'UseApiResult<UserDto[]>'.
+app/admin/page.tsx(70,23): error TS2322: Type '"primary" | "secondary" | "destructive"' is not assignable to type '"success" | "warning" | "secondary" | "destructive" | "default" | "outline" | undefined'.
+  Type '"primary"' is not assignable to type '"success" | "warning" | "secondary" | "destructive" | "default" | "outline" | undefined'.
+app/admin/page.tsx(107,23): error TS2339: Property 'loading' does not exist on type '{ authorized: boolean; user: User | null; }'.
+app/admin/settings/page.tsx(11,23): error TS2339: Property 'loading' does not exist on type '{ authorized: boolean; user: User | null; }'.
+app/payments/page.tsx(16,23): error TS2339: Property 'loading' does not exist on type '{ authorized: boolean; user: User | null; }'.
+app/properties/page.tsx(13,23): error TS2339: Property 'loading' does not exist on type '{ authorized: boolean; user: User | null; }'.
+app/properties/page.tsx(14,45): error TS2339: Property 'mutate' does not exist on type 'PropertyContextValue'.
+app/rooms/page.tsx(18,23): error TS2339: Property 'loading' does not exist on type '{ authorized: boolean; user: User | null; }'.
+app/rooms/page.tsx(22,47): error TS2339: Property 'mutate' does not exist on type 'UseApiResult<RoomDto[]>'.
+app/tenant/maintenance/page.tsx(19,43): error TS2339: Property 'mutate' does not exist on type 'UseApiResult<MaintenanceRequestDto[]>'.
+app/tenant/maintenance/page.tsx(41,46): error TS2339: Property 'propertyId' does not exist on type 'User'.
+app/tenant/maintenance/page.tsx(43,30): error TS2339: Property 'propertyId' does not exist on type 'User'.
+app/tenants/page.tsx(31,35): error TS2339: Property 'mutate' does not exist on type 'UseApiResult<TenantDto[]>'.

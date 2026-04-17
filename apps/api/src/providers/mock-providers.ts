@@ -19,7 +19,22 @@ class MockOtpProvider {
   }
 }
 
-class LocalStorageProvider {
+class MockNotificationProvider {
+  async sendSms(phone: string, message: string) {
+    console.info(`[mock-sms] To ${phone}: ${message}`);
+  }
+
+  async sendWhatsApp(phone: string, message: string) {
+    console.info(`[mock-whatsapp] To ${phone}: ${message}`);
+  }
+}
+
+export interface IStorageProvider {
+  saveBuffer(relativePath: string, buffer: Buffer): Promise<string>;
+  readBuffer(filePath: string): Promise<Buffer>;
+}
+
+class LocalStorageProvider implements IStorageProvider {
   async saveBuffer(relativePath: string, buffer: Buffer) {
     const baseDir = path.resolve(process.cwd(), env.STORAGE_DIR);
     const target = path.resolve(baseDir, relativePath);
@@ -78,6 +93,7 @@ class PdfProvider {
 }
 
 export const mockOtpProvider = new MockOtpProvider();
-export const localStorageProvider = new LocalStorageProvider();
+export const storageProvider: IStorageProvider = new LocalStorageProvider();
 export const pdfProvider = new PdfProvider();
+export const notificationProvider = new MockNotificationProvider();
 
