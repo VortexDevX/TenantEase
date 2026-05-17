@@ -18,7 +18,7 @@ async function authPlugin(app: import("fastify").FastifyInstance) {
     }
     
     if (request.user.role !== "OWNER" || !request.user.ownerProfileId) {
-      throw new AppError(403, "FORBIDDEN", "Owner access is required");
+      throw new AppError(403, "AUTH_FORBIDDEN", "Owner access is required");
     }
   });
 
@@ -31,7 +31,7 @@ async function authPlugin(app: import("fastify").FastifyInstance) {
     }
     
     if (request.user.role !== "TENANT" || !request.user.tenantId) {
-      throw new AppError(403, "FORBIDDEN", "Tenant access is required");
+      throw new AppError(403, "AUTH_FORBIDDEN", "Tenant access is required");
     }
   });
 
@@ -44,7 +44,7 @@ async function authPlugin(app: import("fastify").FastifyInstance) {
     }
     
     if (request.user.role !== "ADMIN") {
-      throw new AppError(403, "FORBIDDEN", "Admin access is required");
+      throw new AppError(403, "AUTH_FORBIDDEN", "Admin access is required");
     }
   });
 

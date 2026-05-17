@@ -61,8 +61,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (PUBLIC_PATHS.includes(pathname)) {
           router.replace(roleHomePath(userData.role));
-        } else if (userData.role === "OWNER" && !userData.displayName && pathname !== "/complete-profile") {
-          router.replace("/complete-profile");
+        } else if (userData.role === "OWNER" && !userData.displayName && pathname !== "/onboarding") {
+          router.replace("/onboarding");
         }
       } catch {
         localStorage.removeItem("te_access_token");
@@ -83,7 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(userData);
 
     if (userData.role === "OWNER" && (isNewUser || !userData.displayName)) {
-      router.push("/complete-profile");
+      router.push("/onboarding");
     } else {
       router.push(roleHomePath(userData.role));
     }

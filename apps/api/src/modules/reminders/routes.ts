@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
+import { requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
-import { ok, AppError } from "../../lib/http.js";
+import { ok } from "../../lib/http.js";
 import { assertPropertyOwnership } from "../common/owner.js";
 import { notificationProvider } from "../../providers/mock-providers.js";
 import { createAuditLog } from "../common/audit.js";
@@ -8,7 +9,7 @@ import { createAuditLog } from "../common/audit.js";
 export async function remindersRoutes(app: FastifyInstance) {
   app.post("/properties/:propertyId/reminders/overdue", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { propertyId: string };
-    await assertPropertyOwnership(params.propertyId, request.user.ownerProfileId);
+    await assertPropertyOwnership(params.propertyId, requireOwnerProfileId(request.user.ownerProfileId));
 
     // Find all overdue rent entries for this property
     const overdueEntries = await prisma.rentEntry.findMany({
@@ -31,7 +32,7 @@ export async function remindersRoutes(app: FastifyInstance) {
     let sentCount = 0;
 
     for (const entry of overdueEntries) {
-      const remaining = (entry.amount - entry.paidAmount) / 100;
+      const remaining = (entry.amountDue - entry.amountPaid) / 100;
       const message = `Reminder from TenantEase: Your rent of ₹${remaining} for ${entry.billingMonth} is overdue. Please pay at the earliest to avoid late fees.`;
       
       // Dispatch securely via mock provider

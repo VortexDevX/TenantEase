@@ -9,6 +9,7 @@ const envSchema = z.object({
   JWT_ACCESS_SECRET: z.string().min(16),
   JWT_REFRESH_SECRET: z.string().min(16),
   OTP_PEPPER: z.string().min(16),
+  ADMIN_PHONES: z.string().optional(),
   API_PORT: z.coerce.number().default(4000),
   API_HOST: z.string().default("0.0.0.0"),
   WEB_URL: z.string().url().default("http://localhost:3000"),
@@ -16,4 +17,3 @@ const envSchema = z.object({
 });
 
 export const env = envSchema.parse(process.env);
-

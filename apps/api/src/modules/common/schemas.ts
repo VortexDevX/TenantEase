@@ -19,6 +19,7 @@ export const propertyInputSchema = z.object({
 
 export const roomInputSchema = z.object({
   roomNumber: z.string().min(1).max(20),
+  floor: z.number().int().min(0).max(100).optional().nullable().default(0),
   type: z.enum(["SINGLE", "DOUBLE", "TRIPLE", "DORMITORY"]),
   bedCount: z.number().int().min(1).max(20),
   monthlyRent: z.number().int().min(1),
@@ -47,14 +48,14 @@ export const vacateInputSchema = z.object({
 export const paymentInputSchema = z.object({
   rentEntryId: uuidSchema,
   amount: z.number().int().min(1),
-  mode: z.enum(["CASH", "UPI", "BANK_TRANSFER"]),
+  mode: z.enum(["CASH", "UPI", "BANK_TRANSFER", "ONLINE"]),
   paidAt: z.string().datetime().or(z.string().date()),
   note: z.string().max(255).optional().nullable()
 });
 
 export const paymentUpdateSchema = z.object({
   amount: z.number().int().min(1).optional(),
-  mode: z.enum(["CASH", "UPI", "BANK_TRANSFER"]).optional(),
+  mode: z.enum(["CASH", "UPI", "BANK_TRANSFER", "ONLINE"]).optional(),
   note: z.string().max(255).optional().nullable(),
   isVoided: z.boolean().optional()
 });

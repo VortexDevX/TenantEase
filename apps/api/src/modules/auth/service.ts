@@ -6,9 +6,18 @@ import { mockOtpProvider } from "../../providers/mock-providers.js";
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const adminPhones = new Set(
+  (env.ADMIN_PHONES ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+);
 
 export async function sendOtp(phone: string) {
   const user = await prisma.user.findUnique({ where: { phone } });
+  if (user?.isBlocked) {
+    throw new AppError(403, "AUTH_FORBIDDEN", "This account is blocked");
+  }
   const otpCode = createOtpCode();
   const challenge = await prisma.otpChallenge.create({
     data: {
@@ -67,6 +76,12 @@ export async function verifyOtp(phone: string, otp: string, challengeId: string)
   }
 
   const result = await prisma.$transaction(async (tx) => {
+    const activeTenant = await tx.tenant.findFirst({
+      where: { phone, status: { in: ["ACTIVE", "NOTICE"] } },
+      orderBy: { createdAt: "desc" }
+    });
+    const isAdminPhone = adminPhones.has(phone);
+
     let user = await tx.user.findUnique({
       where: { phone },
       include: { ownerProfile: true }
@@ -75,10 +90,41 @@ export async function verifyOtp(phone: string, otp: string, challengeId: string)
 
     if (!user) {
       isNewUser = true;
-      user = await tx.user.create({
+      if (isAdminPhone) {
+        user = await tx.user.create({
+          data: {
+            phone,
+            role: "ADMIN"
+          },
+          include: { ownerProfile: true }
+        });
+      } else if (activeTenant) {
+        user = await tx.user.create({
+          data: {
+            phone,
+            role: "TENANT"
+          },
+          include: { ownerProfile: true }
+        });
+      } else {
+        user = await tx.user.create({
+          data: {
+            phone,
+            role: "OWNER",
+            ownerProfile: {
+              create: {}
+            }
+          },
+          include: { ownerProfile: true }
+        });
+      }
+    } else if (user.isBlocked) {
+      throw new AppError(403, "AUTH_FORBIDDEN", "This account is blocked");
+    } else if (isAdminPhone && user.role !== "ADMIN") {
+      user = await tx.user.update({
+        where: { id: user.id },
         data: {
-          phone,
-          role: "TENANT"
+          role: "ADMIN"
         },
         include: { ownerProfile: true }
       });
@@ -103,23 +149,28 @@ export async function verifyOtp(phone: string, otp: string, challengeId: string)
     let ownerProfileId: string | undefined;
     let tenantId: string | undefined;
 
-    if (user.role === "ADMIN") {
+    if (isAdminPhone || user.role === "ADMIN") {
       resolvedRole = "ADMIN";
     } else if (user.ownerProfile) {
       resolvedRole = "OWNER";
       ownerProfileId = user.ownerProfile.id;
     } else {
-      // Check if there's an active tenant booking for this phone
-      const tenant = await tx.tenant.findFirst({
-        where: { phone, status: { in: ["ACTIVE", "NOTICE"] } },
-        orderBy: { createdAt: "desc" }
-      });
       resolvedRole = "TENANT";
-      tenantId = tenant?.id;
+      tenantId = activeTenant?.id;
     }
 
     return { isNewUser, user, resolvedRole, ownerProfileId, tenantId, refreshToken };
   });
+
+  return result;
+}
+
+export async function verifyTenantOtp(phone: string, otp: string, challengeId: string) {
+  const result = await verifyOtp(phone, otp, challengeId);
+
+  if (result.resolvedRole !== "TENANT" || !result.tenantId) {
+    throw new AppError(403, "AUTH_FORBIDDEN", "Tenant access is required for this phone number");
+  }
 
   return result;
 }

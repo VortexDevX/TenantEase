@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
@@ -13,7 +14,7 @@ export async function receiptRoutes(app: FastifyInstance) {
     if (!body.paymentId) {
       throw new AppError(400, "VALIDATION_ERROR", "paymentId is required");
     }
-    const receipt = await generateReceipt(body.paymentId, request.user.ownerProfileId);
+    const receipt = await generateReceipt(body.paymentId, requireOwnerProfileId(request.user.ownerProfileId));
     await createAuditLog({
       userId: request.user.sub,
       action: "receipt.generate",
@@ -28,13 +29,14 @@ export async function receiptRoutes(app: FastifyInstance) {
 
   app.get("/receipts/:id/download", { preHandler: [app.authenticate] }, async (request, reply) => {
     const params = request.params as { id: string };
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
     const receipt = await prisma.receipt.findFirst({
       where: {
         id: params.id,
         payment: {
           rentEntry: {
             tenant: {
-              property: { ownerProfileId: request.user.ownerProfileId }
+              property: { ownerProfileId }
             }
           }
         }
@@ -55,13 +57,14 @@ export async function receiptRoutes(app: FastifyInstance) {
 
   app.get("/tenants/:tenantId/receipts", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { tenantId: string };
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
     const receipts = await prisma.receipt.findMany({
       where: {
         payment: {
           rentEntry: {
             tenantId: params.tenantId,
             tenant: {
-              property: { ownerProfileId: request.user.ownerProfileId }
+              property: { ownerProfileId }
             }
           }
         }
@@ -70,5 +73,63 @@ export async function receiptRoutes(app: FastifyInstance) {
     });
 
     return ok(receipts.map(toReceiptDto));
+  });
+
+  app.post("/receipts/:id/send", { preHandler: [app.authenticate] }, async (request, reply) => {
+    const params = request.params as { id: string };
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    
+    // Ensure the receipt exists and belongs to the owner's property
+    const receipt = await prisma.receipt.findFirst({
+      where: {
+        id: params.id,
+        payment: {
+          rentEntry: {
+            tenant: {
+              property: { ownerProfileId }
+            }
+          }
+        }
+      },
+      include: {
+        payment: {
+          include: {
+            rentEntry: {
+              include: {
+                tenant: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!receipt) {
+      throw new AppError(404, "RECEIPT_NOT_FOUND", "Receipt not found");
+    }
+
+    const tenantAuthId = receipt.payment.rentEntry.tenant.id;
+    const phone = receipt.payment.rentEntry.tenant.phone;
+
+    // Send mock notification
+    app.log.info({
+        event: "MOCK_SEND_RECEIPT",
+        receiptId: receipt.id,
+        receiptNumber: receipt.receiptNumber,
+        tenantId: tenantAuthId,
+        phone: phone
+    }, `Sent receipt ${receipt.receiptNumber} to ${phone}`);
+
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "receipt.send",
+      resource: "Receipt",
+      resourceId: receipt.id,
+      payload: { phone, method: "mock_sms_email" },
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
+
+    return ok({ message: "Receipt sent successfully" });
   });
 }

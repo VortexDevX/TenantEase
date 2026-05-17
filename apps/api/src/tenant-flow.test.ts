@@ -30,16 +30,24 @@ async function createOwnerAuth(): Promise<OwnerAuthResult> {
     payload: { phone }
   });
   
-  const { challengeId, debugOtp } = sendOtpRes.json();
+  const sendOtpBody = sendOtpRes.json() as {
+    data: { challengeId: string; debugOtp?: string };
+  };
   
   const verifyRes = await app.inject({
     method: "POST",
     url: "/auth/verify-otp",
-    payload: { phone, otp: debugOtp, challengeId }
+    payload: {
+      phone,
+      otp: sendOtpBody.data.debugOtp,
+      challengeId: sendOtpBody.data.challengeId
+    }
   });
 
-  const { accessToken, user } = verifyRes.json();
-  return { accessToken, ownerProfileId: user.ownerProfileId };
+  const verifyBody = verifyRes.json() as {
+    data: { accessToken: string; user: { ownerProfileId: string } };
+  };
+  return { accessToken: verifyBody.data.accessToken, ownerProfileId: verifyBody.data.user.ownerProfileId };
 }
 
 async function createTenantAuth(phone: string): Promise<TenantAuthResult> {
@@ -49,16 +57,24 @@ async function createTenantAuth(phone: string): Promise<TenantAuthResult> {
     payload: { phone }
   });
   
-  const { challengeId, debugOtp } = sendOtpRes.json();
+  const sendOtpBody = sendOtpRes.json() as {
+    data: { challengeId: string; debugOtp?: string };
+  };
   
   const verifyRes = await app.inject({
     method: "POST",
     url: "/auth/tenant/verify-otp",
-    payload: { phone, otp: debugOtp, challengeId }
+    payload: {
+      phone,
+      otp: sendOtpBody.data.debugOtp,
+      challengeId: sendOtpBody.data.challengeId
+    }
   });
 
-  const { accessToken, user } = verifyRes.json();
-  return { accessToken, tenantId: user.tenantId };
+  const verifyBody = verifyRes.json() as {
+    data: { accessToken: string; user: { tenantId: string } };
+  };
+  return { accessToken: verifyBody.data.accessToken, tenantId: verifyBody.data.user.tenantId };
 }
 
 describe("Tenant Flow Integration", () => {
@@ -91,7 +107,7 @@ describe("Tenant Flow Integration", () => {
         type: "PG"
       }
     });
-    propertyId = propRes.json().id;
+    propertyId = (propRes.json() as { data: { id: string } }).data.id;
 
     const roomRes = await app.inject({
       method: "POST",
@@ -105,7 +121,7 @@ describe("Tenant Flow Integration", () => {
         depositAmount: 5000000
       }
     });
-    roomId = roomRes.json().id;
+    roomId = (roomRes.json() as { data: { id: string } }).data.id;
 
     const tenantRes = await app.inject({
       method: "POST",
@@ -120,7 +136,7 @@ describe("Tenant Flow Integration", () => {
         depositPaid: 5000000
       }
     });
-    tenantId = tenantRes.json().id;
+    tenantId = (tenantRes.json() as { data: { id: string } }).data.id;
   });
 
   afterAll(async () => {
@@ -163,9 +179,9 @@ describe("Tenant Flow Integration", () => {
     });
 
     expect(rentRes.statusCode).toBe(200);
-    const rentEntries = rentRes.json();
+    const rentEntries = (rentRes.json() as { data: Array<{ amountDue: number }> }).data;
     expect(rentEntries.length).toBeGreaterThanOrEqual(1);
-    expect(rentEntries[0].amount).toBe(1000000);
+    expect(rentEntries[0].amountDue).toBe(1000000);
   });
 
   it("should allow tenant to create and fetch maintenance requests", async () => {
@@ -181,7 +197,7 @@ describe("Tenant Flow Integration", () => {
     });
 
     expect(createRes.statusCode).toBe(200);
-    expect(createRes.json().status).toBe("NEW");
+    expect((createRes.json() as { data: { status: string } }).data.status).toBe("NEW");
 
     const getRes = await app.inject({
       method: "GET",
@@ -190,7 +206,7 @@ describe("Tenant Flow Integration", () => {
     });
 
     expect(getRes.statusCode).toBe(200);
-    expect(getRes.json()[0].category).toBe("PLUMBING");
+    expect((getRes.json() as { data: Array<{ category: string }> }).data[0]?.category).toBe("PLUMBING");
   });
 
   it("should verify /system/sync-occupancy logic correctly", async () => {
@@ -206,7 +222,7 @@ describe("Tenant Flow Integration", () => {
     });
 
     expect(syncRes.statusCode).toBe(200);
-    expect(syncRes.json().synced).toBeGreaterThanOrEqual(1);
+    expect((syncRes.json() as { data: { synced: number } }).data.synced).toBeGreaterThanOrEqual(1);
 
     const room = await prisma.room.findUnique({ where: { id: roomId } });
     expect(room?.occupiedBeds).toBe(0);

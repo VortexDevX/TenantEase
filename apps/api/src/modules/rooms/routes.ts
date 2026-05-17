@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
@@ -11,7 +12,8 @@ import { roomStatusFromOccupancy } from "./service.js";
 export async function roomRoutes(app: FastifyInstance) {
   app.get("/properties/:propertyId/rooms", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { propertyId: string };
-    await assertPropertyOwnership(params.propertyId, request.user.ownerProfileId);
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    await assertPropertyOwnership(params.propertyId, ownerProfileId);
     const rooms = await prisma.room.findMany({
       where: { propertyId: params.propertyId },
       orderBy: { roomNumber: "asc" }
@@ -22,7 +24,8 @@ export async function roomRoutes(app: FastifyInstance) {
   app.post("/properties/:propertyId/rooms", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { propertyId: string };
     const body = roomInputSchema.parse(request.body);
-    await assertPropertyOwnership(params.propertyId, request.user.ownerProfileId);
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    await assertPropertyOwnership(params.propertyId, ownerProfileId);
     const room = await prisma.room.create({
       data: {
         ...body,
@@ -44,10 +47,11 @@ export async function roomRoutes(app: FastifyInstance) {
 
   app.get("/rooms/:id", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
     const room = await prisma.room.findFirst({
       where: {
         id: params.id,
-        property: { ownerProfileId: request.user.ownerProfileId }
+        property: { ownerProfileId }
       }
     });
     if (!room) {
@@ -59,10 +63,11 @@ export async function roomRoutes(app: FastifyInstance) {
   app.put("/rooms/:id", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
     const body = roomInputSchema.parse(request.body);
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
     const room = await prisma.room.findFirst({
       where: {
         id: params.id,
-        property: { ownerProfileId: request.user.ownerProfileId }
+        property: { ownerProfileId }
       }
     });
     if (!room) {
@@ -92,10 +97,11 @@ export async function roomRoutes(app: FastifyInstance) {
 
   app.delete("/rooms/:id", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
     const room = await prisma.room.findFirst({
       where: {
         id: params.id,
-        property: { ownerProfileId: request.user.ownerProfileId }
+        property: { ownerProfileId }
       }
     });
     if (!room) {

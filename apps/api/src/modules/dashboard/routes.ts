@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { ok } from "../../lib/http.js";
 import { assertPropertyOwnership } from "../common/owner.js";
@@ -6,7 +7,7 @@ import { assertPropertyOwnership } from "../common/owner.js";
 export async function dashboardRoutes(app: FastifyInstance) {
   app.get("/properties/:propertyId/dashboard", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { propertyId: string };
-    await assertPropertyOwnership(params.propertyId, request.user.ownerProfileId);
+    await assertPropertyOwnership(params.propertyId, requireOwnerProfileId(request.user.ownerProfileId));
 
     // 1. Occupancy Stats
     const property = await prisma.property.findUnique({
@@ -42,9 +43,9 @@ export async function dashboardRoutes(app: FastifyInstance) {
     let overdueTenantsCount = 0;
 
     for (const entry of currentRentEntries) {
-      expectedRent += entry.amount;
-      collectedRent += entry.paidAmount;
-      const unpaid = entry.amount - entry.paidAmount;
+      expectedRent += entry.amountDue;
+      collectedRent += entry.amountPaid;
+      const unpaid = entry.amountDue - entry.amountPaid;
 
       if (unpaid > 0) {
         pendingRent += unpaid;

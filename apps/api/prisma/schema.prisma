@@ -50,6 +50,7 @@ enum PaymentMode {
   CASH
   UPI
   BANK_TRANSFER
+  ONLINE
 }
 
 enum MaintenanceCategory {
@@ -59,6 +60,20 @@ enum MaintenanceCategory {
   INTERNET
   CLEANING
   OTHER
+}
+
+enum UtilityType {
+  ELECTRICITY
+  WATER
+  GAS
+  INTERNET
+}
+
+enum BillingModel {
+  FLAT_RATE
+  PER_TENANT
+  INDIVIDUAL_METER
+  SHARED_METER
 }
 
 enum MaintenanceUrgency {
@@ -79,6 +94,8 @@ model User {
   id            String         @id @default(uuid())
   phone         String         @unique
   role          UserRole       @default(TENANT)
+  isBlocked     Boolean        @default(false)
+  blockedAt     DateTime?
   ownerProfile  OwnerProfile?
   refreshTokens RefreshToken[]
   otpChallenges OtpChallenge[]
@@ -112,6 +129,9 @@ model Property {
   rooms          Room[]
   tenants        Tenant[]
   maintenanceRequests MaintenanceRequest[]
+  announcements  Announcement[]
+  utilityReadings UtilityReading[]
+  agreements     Agreement[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -122,6 +142,7 @@ model Room {
   id            String     @id @default(uuid())
   propertyId    String
   roomNumber    String
+  floor         Int?       @default(0)
   type          RoomType
   bedCount      Int
   occupiedBeds  Int        @default(0)
@@ -130,6 +151,7 @@ model Room {
   status        RoomStatus @default(VACANT)
   property      Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   tenants       Tenant[]
+  utilityReadings UtilityReading[]
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
@@ -155,6 +177,8 @@ model Tenant {
   documents   TenantDocument[]
   rentEntries RentEntry[]
   maintenanceRequests MaintenanceRequest[]
+  announcementReads AnnouncementRead[]
+  agreements  Agreement[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
@@ -181,6 +205,7 @@ model RentEntry {
   dueDate      DateTime
   amountDue    Int
   amountPaid   Int         @default(0)
+  utilityCharges Json?
   status       RentStatus  @default(UNPAID)
   tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   payments     Payment[]
@@ -242,6 +267,30 @@ model MaintenanceRequest {
   @@index([status])
 }
 
+model UtilityReading {
+  id                    String        @id @default(uuid())
+  propertyId            String
+  roomId                String?
+  utilityType           UtilityType
+  month                 Int
+  year                  Int
+  previousReading       Int?
+  currentReading        Int?
+  unitsConsumed         Int?
+  ratePerUnit           Int?
+  totalCharge           Int
+  billingModel          BillingModel
+  notes                 String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  property              Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  room                  Room?         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([propertyId, roomId, utilityType, month, year])
+  @@index([propertyId, month, year])
+}
+
 model MaintenanceComment {
   id           String             @id @default(uuid())
   requestId     String
@@ -296,4 +345,69 @@ model AuditLog {
 
   @@index([userId])
   @@index([resource, resourceId])
+}
+
+enum AnnouncementCategory {
+  GENERAL
+  MAINTENANCE
+  PAYMENT
+  RULE_CHANGE
+  EMERGENCY
+}
+
+model Announcement {
+  id              String               @id @default(uuid())
+  propertyId      String
+  title           String
+  content         String
+  category        AnnouncementCategory @default(GENERAL)
+  isImportant     Boolean              @default(false)
+  targetFloor     Int?
+  targetRoomId    String?
+  property        Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  reads           AnnouncementRead[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([propertyId])
+  @@index([createdAt])
+  @@map("announcements")
+}
+
+model AnnouncementRead {
+  id              String       @id @default(uuid())
+  announcementId  String
+  tenantId        String
+  readAt          DateTime     @default(now())
+  announcement    Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, tenantId])
+  @@index([announcementId])
+  @@index([tenantId])
+  @@map("announcement_reads")
+}
+
+model Agreement {
+  id              String   @id @default(uuid())
+  tenantId        String
+  propertyId      String
+  templateType    String   @default("pg")
+  state           String?
+  startDate       DateTime @db.Date
+  endDate         DateTime? @db.Date
+  duration        String?
+  customClauses   String[] @default([])
+  agreementData   Json?
+  pdfPath         String?
+  status          String   @default("draft")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property        Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([propertyId])
+  @@map("agreements")
 }

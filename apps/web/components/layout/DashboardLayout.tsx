@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { LayoutDashboard, Users, CreditCard, Wrench, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, CreditCard, Wrench, LogOut, Building2, BedDouble, Megaphone, Zap, BarChart3, FileText } from "lucide-react";
 import { PropertyProvider, useProperty } from "@/lib/PropertyContext";
 
 interface LayoutProps {
@@ -12,13 +12,19 @@ interface LayoutProps {
 
 const navItems = [
   { icon: LayoutDashboard, label: "Home", href: "/" },
+  { icon: Building2, label: "Properties", href: "/properties" },
+  { icon: BedDouble, label: "Rooms", href: "/rooms" },
   { icon: Users, label: "Tenants", href: "/tenants" },
-  { icon: CreditCard, label: "Payments", href: "/payments/new" },
+  { icon: Megaphone, label: "Announcements", href: "/announcements" },
+  { icon: Zap, label: "Utilities", href: "/utilities" },
+  { icon: CreditCard, label: "Payments", href: "/payments" },
+  { icon: FileText, label: "Agreements", href: "/agreements" },
+  { icon: BarChart3, label: "Reports", href: "/reports" },
   { icon: Wrench, label: "Maintenance", href: "/maintenance" },
 ];
 
 function LayoutShell({ children, activePath }: LayoutProps) {
-  const { activeProperty, loading: propLoading } = useProperty();
+  const { activeProperty, properties, setActivePropertyId, loading: propLoading } = useProperty();
   const propertyName = propLoading ? "Loading..." : (activeProperty?.name ?? "No Property");
 
   return (
@@ -33,7 +39,24 @@ function LayoutShell({ children, activePath }: LayoutProps) {
           <span className="font-bold text-lg text-foreground tracking-tight">TenantEase</span>
         </div>
 
-        <nav className="flex flex-col gap-2 mt-4 flex-1">
+        <div className="mt-4 flex flex-col gap-3">
+          <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Active Property</label>
+          <select
+            value={activeProperty?.id ?? ""}
+            onChange={(event) => setActivePropertyId(event.target.value)}
+            className="h-11 rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground outline-none transition-colors focus:border-primary"
+            disabled={propLoading || properties.length === 0}
+          >
+            {properties.length === 0 ? <option value="">No properties yet</option> : null}
+            {properties.map((property) => (
+              <option key={property.id} value={property.id}>
+                {property.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <nav className="flex flex-col gap-2 mt-2 flex-1">
           {navItems.map((item) => {
             const isActive = activePath === item.href;
             const Icon = item.icon;
@@ -58,7 +81,9 @@ function LayoutShell({ children, activePath }: LayoutProps) {
           <div className="p-4 bg-secondary rounded-xl flex items-center justify-between border border-border">
               <div className="flex flex-col">
                 <span className="text-sm font-semibold tracking-tight text-foreground">{propertyName}</span>
-                <span className="text-xs text-muted-foreground">{activeProperty?.type ?? ""}</span>
+                <span className="text-xs text-muted-foreground">
+                  {activeProperty ? `${activeProperty.type} · ${activeProperty.occupiedBeds}/${activeProperty.occupiedBeds + activeProperty.vacantBeds} beds occupied` : ""}
+                </span>
               </div>
           </div>
           <button 
@@ -87,6 +112,23 @@ function LayoutShell({ children, activePath }: LayoutProps) {
              {propertyName}
           </div>
         </header>
+
+        <div className="md:hidden mb-4">
+          <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Active Property</label>
+          <select
+            value={activeProperty?.id ?? ""}
+            onChange={(event) => setActivePropertyId(event.target.value)}
+            className="h-11 w-full rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground outline-none transition-colors focus:border-primary"
+            disabled={propLoading || properties.length === 0}
+          >
+            {properties.length === 0 ? <option value="">No properties yet</option> : null}
+            {properties.map((property) => (
+              <option key={property.id} value={property.id}>
+                {property.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {children}
       </main>

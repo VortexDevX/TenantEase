@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { ok } from "../../lib/http.js";
 import { assertPropertyOwnership } from "../common/owner.js";
@@ -8,7 +9,8 @@ import { generateMonthlyRentEntries } from "./service.js";
 export async function rentRoutes(app: FastifyInstance) {
   app.get("/properties/:propertyId/rent", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { propertyId: string };
-    await assertPropertyOwnership(params.propertyId, request.user.ownerProfileId);
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    await assertPropertyOwnership(params.propertyId, ownerProfileId);
     const entries = await prisma.rentEntry.findMany({
       where: {
         tenant: {
@@ -34,16 +36,17 @@ export async function rentRoutes(app: FastifyInstance) {
   app.post("/properties/:propertyId/rent/generate", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { propertyId: string };
     const body = (request.body as { billingMonth?: string } | undefined) ?? {};
-    return ok(await generateMonthlyRentEntries(params.propertyId, request.user.ownerProfileId, body.billingMonth));
+    return ok(await generateMonthlyRentEntries(params.propertyId, requireOwnerProfileId(request.user.ownerProfileId), body.billingMonth));
   });
 
   app.get("/tenants/:tenantId/rent", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { tenantId: string };
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
     const entries = await prisma.rentEntry.findMany({
       where: {
         tenantId: params.tenantId,
         tenant: {
-          property: { ownerProfileId: request.user.ownerProfileId }
+          property: { ownerProfileId }
         }
       },
       orderBy: { billingMonth: "desc" }
@@ -52,4 +55,3 @@ export async function rentRoutes(app: FastifyInstance) {
     return ok(entries.map(toRentEntryDto));
   });
 }
-

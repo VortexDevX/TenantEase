@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useRequireRole } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,7 +12,7 @@ import { CreatePropertyModal } from "@/components/properties/CreatePropertyModal
 
 export default function PropertiesPage() {
   const { authorized } = useRequireRole("OWNER");
-  const { properties, loading: propLoading, refetch } = useProperty();
+  const { properties, loading: propLoading, refetch, setActivePropertyId, activeProperty } = useProperty();
   const [showModal, setShowModal] = useState(false);
   
   if (propLoading) return (
@@ -66,7 +67,20 @@ export default function PropertiesPage() {
                       <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Address</span>
                       <span className="text-sm font-medium truncate w-[200px]">{prop.address} - {prop.pinCode}</span>
                    </div>
-                   <Button variant="ghost" size="sm" className="hidden group-hover:flex">Manage</Button>
+                   <div className="hidden items-center gap-2 group-hover:flex">
+                     <Button
+                       variant={activeProperty?.id === prop.id ? "default" : "ghost"}
+                       size="sm"
+                       onClick={() => setActivePropertyId(prop.id)}
+                     >
+                       {activeProperty?.id === prop.id ? "Active" : "Set Active"}
+                     </Button>
+                     <Link href="/">
+                       <Button variant="ghost" size="sm" onClick={() => setActivePropertyId(prop.id)}>
+                         Open
+                       </Button>
+                     </Link>
+                   </div>
                 </CardContent>
               </Card>
             ))

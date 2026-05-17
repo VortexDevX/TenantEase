@@ -8,6 +8,7 @@ import { useAuth } from "../../contexts/AuthContext";
 export default function LoginPage() {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
+  const [debugOtp, setDebugOtp] = useState("");
   const [challengeId, setChallengeId] = useState("");
   const [step, setStep] = useState<"PHONE" | "OTP">("PHONE");
   const [loading, setLoading] = useState(false);
@@ -25,11 +26,15 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetchApi<{ challengeId: string }>("/auth/send-otp", {
+      const res = await fetchApi<{ challengeId: string; debugOtp?: string }>("/auth/send-otp", {
         method: "POST",
         body: JSON.stringify({ phone }),
       });
       setChallengeId(res.challengeId);
+      setDebugOtp(res.debugOtp ?? "");
+      if (res.debugOtp) {
+        setOtp(res.debugOtp);
+      }
       setStep("OTP");
     } catch (err: any) {
       setError(err.message || "Failed to send OTP");
@@ -148,11 +153,12 @@ export default function LoginPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setStep("PHONE");
-                    setOtp("");
-                    setError("");
-                  }}
+                    onClick={() => {
+                      setStep("PHONE");
+                      setOtp("");
+                      setDebugOtp("");
+                      setError("");
+                    }}
                   className="w-full py-2 text-sm text-gray-500 hover:text-gray-900 transition-colors"
                 >
                   Change Mobile Number
@@ -160,6 +166,13 @@ export default function LoginPage() {
               </div>
             </form>
           )}
+
+          {step === "OTP" && debugOtp ? (
+            <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Local Debug OTP</p>
+              <p className="mt-1 text-base font-bold tracking-[0.35em] text-emerald-900">{debugOtp}</p>
+            </div>
+          ) : null}
 
           <div className="mt-8">
             <div className="relative">

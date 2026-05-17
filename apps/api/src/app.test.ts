@@ -1,9 +1,22 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
+import { prisma } from "./lib/db.js";
 
 const app = createApp();
+const createdPhones = new Set<string>();
+
+beforeAll(async () => {
+  await app.ready();
+});
 
 afterAll(async () => {
+  await prisma.user.deleteMany({
+    where: {
+      phone: {
+        in: Array.from(createdPhones)
+      }
+    }
+  });
   await app.close();
 });
 
@@ -34,5 +47,34 @@ describe("api app", () => {
       }
     });
   });
-});
 
+  it("should reject OTP requests for blocked users", async () => {
+    const phone = "9111111111";
+    createdPhones.add(phone);
+
+    await prisma.user.create({
+      data: {
+        phone,
+        role: "OWNER",
+        isBlocked: true,
+        ownerProfile: {
+          create: {}
+        }
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/send-otp",
+      payload: { phone }
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({
+      success: false,
+      error: {
+        code: "AUTH_FORBIDDEN"
+      }
+    });
+  });
+});

@@ -20,6 +20,15 @@ import { tenantRoutes } from "./modules/tenants/routes.js";
 import authPlugin from "./plugins/auth.js";
 import requestContextPlugin from "./plugins/request-context.js";
 
+import fastifyMultipart from "@fastify/multipart";
+import { documentRoutes } from "./modules/documents/routes.js";
+import { importTenantRoutes } from "./modules/tenants/import.js";
+import { announcementRoutes } from "./modules/announcements/routes.js";
+import { cronRoutes } from "./modules/cron/routes.js";
+import { utilityRoutes } from "./modules/utilities/routes.js";
+import { agreementRoutes } from "./modules/agreements/routes.js";
+import { reportsRoutes } from "./modules/reports/routes.js";
+
 export function createApp() {
   const app = Fastify({
     logger: false
@@ -33,6 +42,11 @@ export function createApp() {
     max: 120,
     timeWindow: "1 minute"
   });
+  app.register(fastifyMultipart, {
+    limits: {
+      fileSize: 5 * 1024 * 1024 // 5MB limit for KYC docs
+    }
+  });
   app.register(authPlugin);
 
   app.get("/health", async () => ({
@@ -43,9 +57,12 @@ export function createApp() {
   app.register(adminRoutes);
   app.register(authRoutes);
   app.register(docsRoutes);
+  app.register(documentRoutes);
   app.register(propertyRoutes);
   app.register(roomRoutes);
   app.register(tenantRoutes);
+  app.register(importTenantRoutes);
+  app.register(announcementRoutes);
   app.register(tenantPortalRoutes);
   app.register(dashboardRoutes);
   app.register(rentRoutes);
@@ -54,6 +71,10 @@ export function createApp() {
   app.register(paymentRoutes);
   app.register(receiptRoutes);
   app.register(systemRoutes);
+  app.register(cronRoutes);
+  app.register(utilityRoutes);
+  app.register(agreementRoutes);
+  app.register(reportsRoutes);
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof AppError) {

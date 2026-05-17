@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
+import { requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
@@ -65,6 +66,7 @@ async function assertMaintenanceOwnership(requestId: string, ownerProfileId: str
 export async function maintenanceRoutes(app: FastifyInstance) {
   app.get("/properties/:propertyId/maintenance", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { propertyId: string };
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
     const query = paginationSchema.extend({
       status: maintenanceUpdateSchema.shape.status.optional(),
       category: maintenanceCreateSchema.shape.category.optional(),
@@ -72,7 +74,7 @@ export async function maintenanceRoutes(app: FastifyInstance) {
       tenantId: maintenanceCreateSchema.shape.tenantId.optional()
     }).parse(request.query);
 
-    await assertPropertyOwnership(params.propertyId, request.user.ownerProfileId);
+    await assertPropertyOwnership(params.propertyId, ownerProfileId);
 
     const where = {
       propertyId: params.propertyId,
@@ -130,7 +132,7 @@ export async function maintenanceRoutes(app: FastifyInstance) {
 
   app.get("/maintenance/:id", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
-    const item = await assertMaintenanceOwnership(params.id, request.user.ownerProfileId);
+    const item = await assertMaintenanceOwnership(params.id, requireOwnerProfileId(request.user.ownerProfileId));
     return ok({
       request: toMaintenanceRequestDto(item),
       comments: item.comments.map(toMaintenanceCommentDto)
@@ -139,13 +141,14 @@ export async function maintenanceRoutes(app: FastifyInstance) {
 
   app.post("/maintenance", { preHandler: [app.authenticate] }, async (request) => {
     const body = maintenanceCreateSchema.parse(request.body);
-    await assertPropertyOwnership(body.propertyId, request.user.ownerProfileId);
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    await assertPropertyOwnership(body.propertyId, ownerProfileId);
 
     const tenant = await prisma.tenant.findFirst({
       where: {
         id: body.tenantId,
         propertyId: body.propertyId,
-        property: { ownerProfileId: request.user.ownerProfileId }
+        property: { ownerProfileId }
       }
     });
 
@@ -188,7 +191,7 @@ export async function maintenanceRoutes(app: FastifyInstance) {
   app.put("/maintenance/:id", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
     const body = maintenanceUpdateSchema.parse(request.body);
-    const current = await assertMaintenanceOwnership(params.id, request.user.ownerProfileId);
+    const current = await assertMaintenanceOwnership(params.id, requireOwnerProfileId(request.user.ownerProfileId));
 
     if (current.status === "CLOSED") {
       throw new AppError(422, "INVALID_MAINTENANCE_TRANSITION", "Closed requests cannot be modified");
@@ -250,7 +253,7 @@ export async function maintenanceRoutes(app: FastifyInstance) {
   app.post("/maintenance/:id/comments", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
     const body = maintenanceCommentSchema.parse(request.body);
-    const current = await assertMaintenanceOwnership(params.id, request.user.ownerProfileId);
+    const current = await assertMaintenanceOwnership(params.id, requireOwnerProfileId(request.user.ownerProfileId));
 
     if (current.status === "CLOSED") {
       throw new AppError(422, "INVALID_MAINTENANCE_TRANSITION", "Closed requests cannot receive comments");
@@ -280,7 +283,7 @@ export async function maintenanceRoutes(app: FastifyInstance) {
 
   app.post("/maintenance/:id/close", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
-    const current = await assertMaintenanceOwnership(params.id, request.user.ownerProfileId);
+    const current = await assertMaintenanceOwnership(params.id, requireOwnerProfileId(request.user.ownerProfileId));
 
     if (current.status === "CLOSED") {
       return ok(toMaintenanceRequestDto(current));

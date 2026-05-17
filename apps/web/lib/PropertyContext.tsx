@@ -34,7 +34,18 @@ export function PropertyProvider({ children }: { children: React.ReactNode }) {
     try {
       const data = await fetchApi<PropertyDto[]>("/properties");
       setProperties(data);
-      if (data.length > 0 && !activeId) {
+      if (data.length === 0) {
+        setActiveId(null);
+        return;
+      }
+
+      const storedId = typeof window !== "undefined" ? window.localStorage.getItem("te_active_property_id") : null;
+      const preferredId = activeId ?? storedId;
+      const hasPreferred = preferredId ? data.some((property) => property.id === preferredId) : false;
+
+      if (hasPreferred) {
+        setActiveId(preferredId);
+      } else {
         setActiveId(data[0].id);
       }
     } catch (err) {
@@ -47,6 +58,18 @@ export function PropertyProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (activeId) {
+      window.localStorage.setItem("te_active_property_id", activeId);
+    } else {
+      window.localStorage.removeItem("te_active_property_id");
+    }
+  }, [activeId]);
 
   const activeProperty = properties.find((p) => p.id === activeId) ?? null;
 

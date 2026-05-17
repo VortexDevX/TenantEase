@@ -5,16 +5,27 @@ const routeGroups = {
   auth: [
     "POST /auth/send-otp",
     "POST /auth/verify-otp",
+    "POST /auth/tenant/verify-otp",
     "POST /auth/refresh",
     "POST /auth/logout",
     "GET /auth/me",
     "PUT /auth/complete-profile"
+  ],
+  admin: [
+    "GET /admin/users",
+    "PUT /admin/users/:id/role",
+    "POST /admin/users/:id/block",
+    "POST /admin/users/:id/unblock",
+    "DELETE /admin/users/:id"
   ],
   properties: [
     "GET /properties",
     "POST /properties",
     "GET /properties/:id",
     "PUT /properties/:id"
+  ],
+  dashboard: [
+    "GET /properties/:propertyId/dashboard"
   ],
   rooms: [
     "GET /properties/:propertyId/rooms",
@@ -44,6 +55,9 @@ const routeGroups = {
     "POST /properties/:propertyId/rent/generate",
     "GET /tenants/:tenantId/rent"
   ],
+  reminders: [
+    "POST /properties/:propertyId/reminders/overdue"
+  ],
   payments: [
     "POST /payments",
     "GET /payments/:id",
@@ -53,6 +67,15 @@ const routeGroups = {
     "POST /receipts",
     "GET /receipts/:id/download",
     "GET /tenants/:tenantId/receipts"
+  ],
+  tenantPortal: [
+    "GET /tenant-portal/rent",
+    "GET /tenant-portal/maintenance",
+    "POST /tenant-portal/maintenance",
+    "GET /tenant-portal/receipts/:id/download"
+  ],
+  system: [
+    "POST /system/sync-occupancy"
   ]
 };
 

@@ -1,10 +1,11 @@
 import type { FastifyInstance } from "fastify";
+import { requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
 import { createAuditLog } from "../common/audit.js";
 import { otpSendSchema, otpVerifySchema, profileSchema } from "../common/schemas.js";
-import { rotateRefreshToken, revokeRefreshToken, sendOtp, verifyOtp } from "./service.js";
+import { rotateRefreshToken, revokeRefreshToken, sendOtp, verifyOtp, verifyTenantOtp } from "./service.js";
 
 function signAccessToken(
   app: FastifyInstance,
@@ -56,6 +57,42 @@ export async function authRoutes(app: FastifyInstance) {
     await createAuditLog({
       userId: result.user.id,
       action: "auth.verify_otp",
+      resource: "User",
+      resourceId: result.user.id,
+      payload: { isNewUser: result.isNewUser, resolvedRole: result.resolvedRole },
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
+
+    return ok({
+      accessToken,
+      refreshToken: result.refreshToken,
+      user: {
+        id: result.user.id,
+        phone: result.user.phone,
+        role: result.resolvedRole,
+        ownerProfileId: result.ownerProfileId,
+        tenantId: result.tenantId
+      },
+      isNewUser: result.isNewUser
+    });
+  });
+
+  app.post("/auth/tenant/verify-otp", async (request) => {
+    const body = otpVerifySchema.parse(request.body);
+    const result = await verifyTenantOtp(body.phone, body.otp, body.challengeId);
+
+    const accessToken = signAccessToken(app, {
+      userId: result.user.id,
+      phone: result.user.phone,
+      role: result.resolvedRole,
+      ownerProfileId: result.ownerProfileId,
+      tenantId: result.tenantId
+    });
+
+    await createAuditLog({
+      userId: result.user.id,
+      action: "auth.verify_tenant_otp",
       resource: "User",
       resourceId: result.user.id,
       payload: { isNewUser: result.isNewUser, resolvedRole: result.resolvedRole },
@@ -176,7 +213,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.put("/auth/complete-profile", { preHandler: [app.authenticate] }, async (request) => {
     const body = profileSchema.parse(request.body);
     const profile = await prisma.ownerProfile.update({
-      where: { id: request.user.ownerProfileId },
+      where: { id: requireOwnerProfileId(request.user.ownerProfileId) },
       data: {
         displayName: body.displayName,
         companyName: body.companyName

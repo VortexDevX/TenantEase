@@ -15,6 +15,7 @@ DATABASE_URL=postgresql://postgres@127.0.0.1:55432/tenantease?schema=public
 JWT_ACCESS_SECRET=your-random-secret
 JWT_REFRESH_SECRET=your-random-secret
 OTP_PEPPER=your-random-secret
+ADMIN_PHONES=9999999999
 API_PORT=4000
 API_HOST=0.0.0.0
 WEB_URL=http://localhost:3000
@@ -74,6 +75,13 @@ Web URL:
 http://localhost:3000
 ```
 
+Login notes:
+
+- fresh phone number with no tenant booking logs in as an `OWNER`
+- phone number attached to an active tenant logs in as a `TENANT`
+- phone number listed in `ADMIN_PHONES` logs in as an `ADMIN`
+- in local dev, the login screen auto-fills and shows the mock OTP returned by `/auth/send-otp`
+
 ## 7. Run everything in one command
 
 If you want both API and web together:
@@ -112,4 +120,3 @@ corepack pnpm --filter @tenantease/api prisma:migrate
 corepack pnpm --filter @tenantease/api prisma:seed
 corepack pnpm dev
 ```
-

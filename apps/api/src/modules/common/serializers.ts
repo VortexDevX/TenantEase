@@ -54,6 +54,7 @@ export function toRoomDto(input: {
   id: string;
   propertyId: string;
   roomNumber: string;
+  floor: number | null;
   type: RoomType;
   bedCount: number;
   occupiedBeds: number;

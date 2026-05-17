@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,14 +10,15 @@ import { useProperty } from "@/lib/PropertyContext";
 import { useApi } from "@/lib/useApi";
 import { fetchApi } from "@/lib/api-client";
 import { formatPaisa } from "@/lib/format";
-import { IndianRupee, Search, CheckCircle2, ChevronRight, Banknote, CreditCard, Building, Loader2 } from "lucide-react";
-import type { TenantDto, RentEntryDto } from "@tenantease/types";
+import { IndianRupee, Search, CheckCircle2, ChevronRight, Banknote, CreditCard, Building, Loader2, Send } from "lucide-react";
+import type { TenantDto, RentEntryDto, PaymentDto, ReceiptDto } from "@tenantease/types";
 
 function getInitials(name: string): string {
   return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 }
 
 function RecordPaymentContent() {
+  const searchParams = useSearchParams();
   const { activeProperty, loading: propLoading } = useProperty();
   const propertyId = activeProperty?.id;
 
@@ -25,11 +27,14 @@ function RecordPaymentContent() {
   );
 
   const [search, setSearch] = useState("");
-  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(searchParams.get("tenantId"));
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<"UPI" | "CASH" | "BANK_TRANSFER">("UPI");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [generatedReceiptId, setGeneratedReceiptId] = useState<string | null>(null);
+  const [sendingReceipt, setSendingReceipt] = useState(false);
+  const [receiptSent, setReceiptSent] = useState(false);
 
   const selectedTenant = tenants?.find((t) => t.id === selectedTenantId) ?? null;
 
@@ -58,7 +63,7 @@ function RecordPaymentContent() {
 
     setSubmitting(true);
     try {
-      await fetchApi("/payments", {
+      const paymentData = await fetchApi<PaymentDto>("/payments", {
         method: "POST",
         body: JSON.stringify({
           rentEntryId: unpaidEntry.id,
@@ -67,6 +72,17 @@ function RecordPaymentContent() {
           paidAt: new Date().toISOString(),
         }),
       });
+      
+      try {
+         const receiptData = await fetchApi<ReceiptDto>("/receipts", {
+           method: "POST",
+           body: JSON.stringify({ paymentId: paymentData.id })
+         });
+         setGeneratedReceiptId(receiptData.id);
+      } catch (e) {
+         console.warn("Failed to generate receipt automatically");
+      }
+      
       setSubmitted(true);
     } catch (err) {
       // Error state could be enhanced here
@@ -88,9 +104,37 @@ function RecordPaymentContent() {
         <p className="text-muted-foreground font-medium">
           {formatPaisa(Math.round(parseFloat(amount) * 100))} from {selectedTenant?.fullName}
         </p>
-        <Button onClick={() => { setSubmitted(false); setSelectedTenantId(null); setAmount(""); setSearch(""); }}>
-          Record Another
-        </Button>
+        <div className="flex items-center gap-3 mt-4">
+           <Button variant="outline" onClick={() => { 
+               setSubmitted(false); setSelectedTenantId(null); setAmount(""); setSearch(""); 
+               setGeneratedReceiptId(null); setReceiptSent(false); 
+           }}>
+             Record Another
+           </Button>
+           
+           {generatedReceiptId && !receiptSent && (
+              <Button onClick={async () => {
+                 setSendingReceipt(true);
+                 try {
+                     await fetchApi(`/receipts/${generatedReceiptId}/send`, { method: "POST" });
+                     setReceiptSent(true);
+                 } catch (e: any) {
+                     alert(e.message || "Failed to send receipt");
+                 } finally {
+                     setSendingReceipt(false);
+                 }
+              }} disabled={sendingReceipt} className="bg-success text-success-foreground hover:bg-success/90">
+                 {sendingReceipt ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
+                 Send Digital Receipt
+              </Button>
+           )}
+           
+           {receiptSent && (
+              <Button variant="secondary" className="bg-success/10 text-success pointer-events-none hover:bg-success/10">
+                 <CheckCircle2 className="w-4 h-4 mr-2" /> Receipt Sent
+              </Button>
+           )}
+        </div>
       </div>
     );
   }
@@ -269,7 +313,7 @@ export default function RecordPayment() {
   if (!authorized) return null;
 
   return (
-    <DashboardLayout activePath="/payments/new">
+    <DashboardLayout activePath="/payments">
       <RecordPaymentContent />
     </DashboardLayout>
   );

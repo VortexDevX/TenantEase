@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
@@ -17,7 +18,8 @@ export async function tenantRoutes(app: FastifyInstance) {
   app.get("/properties/:propertyId/tenants", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { propertyId: string };
     const query = paginationSchema.parse(request.query);
-    await assertPropertyOwnership(params.propertyId, request.user.ownerProfileId);
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    await assertPropertyOwnership(params.propertyId, ownerProfileId);
 
     const where = {
       propertyId: params.propertyId,
@@ -57,8 +59,9 @@ export async function tenantRoutes(app: FastifyInstance) {
   app.post("/properties/:propertyId/tenants", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { propertyId: string };
     const body = tenantInputSchema.parse({ ...(request.body as object), propertyId: params.propertyId });
-    await assertPropertyOwnership(params.propertyId, request.user.ownerProfileId);
-    await assertRoomAvailability(body.roomId, request.user.ownerProfileId);
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    await assertPropertyOwnership(params.propertyId, ownerProfileId);
+    await assertRoomAvailability(body.roomId, ownerProfileId);
 
     const tenant = await prisma.tenant.create({
       data: {
@@ -82,10 +85,11 @@ export async function tenantRoutes(app: FastifyInstance) {
 
   app.get("/tenants/:id", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
     const tenant = await prisma.tenant.findFirst({
       where: {
         id: params.id,
-        property: { ownerProfileId: request.user.ownerProfileId }
+        property: { ownerProfileId }
       }
     });
 
@@ -99,10 +103,11 @@ export async function tenantRoutes(app: FastifyInstance) {
   app.put("/tenants/:id", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
     const body = tenantInputSchema.partial().parse(request.body);
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
     const existing = await prisma.tenant.findFirst({
       where: {
         id: params.id,
-        property: { ownerProfileId: request.user.ownerProfileId }
+        property: { ownerProfileId }
       }
     });
 
@@ -136,10 +141,11 @@ export async function tenantRoutes(app: FastifyInstance) {
   app.post("/tenants/:id/vacate", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
     const body = vacateInputSchema.parse(request.body);
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
     const tenant = await prisma.tenant.findFirst({
       where: {
         id: params.id,
-        property: { ownerProfileId: request.user.ownerProfileId }
+        property: { ownerProfileId }
       }
     });
 
@@ -175,10 +181,11 @@ export async function tenantRoutes(app: FastifyInstance) {
   app.post("/tenants/:id/transfer", { preHandler: [app.authenticate] }, async (request) => {
     const params = request.params as { id: string };
     const body = transferInputSchema.parse(request.body);
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
     const tenant = await prisma.tenant.findFirst({
       where: {
         id: params.id,
-        property: { ownerProfileId: request.user.ownerProfileId }
+        property: { ownerProfileId }
       }
     });
 
@@ -190,7 +197,7 @@ export async function tenantRoutes(app: FastifyInstance) {
       throw new AppError(422, "INVALID_TRANSFER", "Tenant is already assigned to that room");
     }
 
-    await assertRoomAvailability(body.roomId, request.user.ownerProfileId);
+    await assertRoomAvailability(body.roomId, ownerProfileId);
 
     const updated = await prisma.tenant.update({
       where: { id: tenant.id },

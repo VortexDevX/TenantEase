@@ -11,8 +11,10 @@ import { useProperty } from "@/lib/PropertyContext";
 import { useApi } from "@/lib/useApi";
 import { formatPaisa } from "@/lib/format";
 import { AddTenantModal } from "@/components/tenants/AddTenantModal";
-import { Search, Plus, PhoneCall, IndianRupee, MoreVertical, Loader2 } from "lucide-react";
+import { CsvImportModal } from "@/components/tenants/CsvImportModal";
+import { Search, Plus, PhoneCall, IndianRupee, MoreVertical, Loader2, UploadCloud } from "lucide-react";
 import type { TenantDto, TenantStatus } from "@tenantease/types";
+import Link from "next/link";
 
 function getInitials(name: string): string {
   return name
@@ -27,6 +29,7 @@ function TenantListContent() {
   const { activeProperty, loading: propLoading } = useProperty();
   const propertyId = activeProperty?.id;
   const [showModal, setShowModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const { data: tenants, loading, refetch } = useApi<TenantDto[]>(
     propertyId ? `/properties/${propertyId}/tenants?limit=100` : null
@@ -81,6 +84,17 @@ function TenantListContent() {
         />
       )}
 
+      {showImportModal && propertyId && (
+        <CsvImportModal
+          propertyId={propertyId}
+          onClose={() => setShowImportModal(false)}
+          onSuccess={() => {
+            setShowImportModal(false);
+            refetch();
+          }}
+        />
+      )}
+
       {/* Header & Actions */}
       <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -89,9 +103,14 @@ function TenantListContent() {
             {isLoading ? "Loading..." : `Manage ${tenants?.length ?? 0} tenant${(tenants?.length ?? 0) !== 1 ? "s" : ""}.`}
           </p>
         </div>
-        <Button onClick={() => setShowModal(true)} disabled={!propertyId} className="shrink-0 w-full sm:w-auto shadow-float">
-           <Plus className="mr-2" size={18} /> Add Tenant
-        </Button>
+        <div className="flex gap-3 w-full sm:w-auto">
+          <Button onClick={() => setShowImportModal(true)} disabled={!propertyId} variant="outline" className="shrink-0 flex-1 sm:flex-auto shadow-sm">
+             <UploadCloud className="mr-2" size={18} /> Import CSV
+          </Button>
+          <Button onClick={() => setShowModal(true)} disabled={!propertyId} className="shrink-0 flex-1 sm:flex-auto shadow-float">
+             <Plus className="mr-2" size={18} /> Add Tenant
+          </Button>
+        </div>
       </section>
 
       {/* Search & Filters */}
@@ -157,9 +176,9 @@ function TenantListContent() {
                       <a href={`tel:${t.phone}`} className="flex items-center justify-center gap-2 py-3 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors border-r border-border">
                         <PhoneCall size={16} /> Call
                       </a>
-                      <button className="flex items-center justify-center gap-2 py-3 text-sm font-semibold text-primary-strong hover:bg-primary/5 transition-colors">
+                      <Link href={`/payments/new?tenantId=${t.id}`} className="flex items-center justify-center gap-2 py-3 text-sm font-semibold text-primary-strong hover:bg-primary/5 transition-colors">
                         <IndianRupee size={16} /> Record Rent
-                      </button>
+                      </Link>
                    </div>
                 </CardContent>
              </Card>

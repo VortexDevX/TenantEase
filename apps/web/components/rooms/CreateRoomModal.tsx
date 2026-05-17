@@ -17,6 +17,7 @@ export function CreateRoomModal({ propertyId, onClose, onSuccess }: CreateRoomMo
 
   const [formData, setFormData] = useState({
     roomNumber: "",
+    floor: 0,
     type: "SINGLE" as RoomType,
     bedCount: 1,
     monthlyRent: "",
@@ -63,10 +64,14 @@ export function CreateRoomModal({ propertyId, onClose, onSuccess }: CreateRoomMo
              </div>
            )}
 
-           <div className="grid grid-cols-2 gap-4">
+           <div className="grid grid-cols-3 gap-4">
              <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-semibold">Room Number</label>
                 <Input required value={formData.roomNumber} onChange={e => setFormData({...formData, roomNumber: e.target.value})} placeholder="e.g. 101" />
+             </div>
+             <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-semibold">Floor</label>
+                <Input type="number" min="0" value={formData.floor} onChange={e => setFormData({...formData, floor: parseInt(e.target.value) || 0})} placeholder="0" />
              </div>
              <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-semibold">Type</label>

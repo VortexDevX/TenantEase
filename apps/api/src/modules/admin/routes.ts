@@ -6,7 +6,7 @@ import { ok } from "../../lib/http.js";
 import { createAuditLog } from "../common/audit.js";
 
 const updateRoleSchema = z.object({
-  role: z.enum(["OWNER", "TENANT"])
+  role: z.enum(["ADMIN", "OWNER", "TENANT"])
 });
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -25,6 +25,8 @@ export async function adminRoutes(app: FastifyInstance) {
           id: true,
           phone: true,
           role: true,
+          isBlocked: true,
+          blockedAt: true,
           createdAt: true,
           ownerProfile: {
             select: { id: true, displayName: true, companyName: true }
@@ -51,8 +53,8 @@ export async function adminRoutes(app: FastifyInstance) {
       throw new AppError(404, "NOT_FOUND", "User not found");
     }
 
-    if (user.role === "ADMIN") {
-      throw new AppError(403, "FORBIDDEN", "Cannot change an admin's role via API");
+    if (user.role === "ADMIN" && request.user.sub !== id) {
+      throw new AppError(403, "AUTH_FORBIDDEN", "Cannot change another admin's role via API");
     }
 
     // If promoting to OWNER, create OwnerProfile if missing
@@ -84,5 +86,123 @@ export async function adminRoutes(app: FastifyInstance) {
     });
 
     return ok({ id, role: body.role });
+  });
+
+  app.post("/admin/users/:id/block", { preHandler: [app.authenticateAdmin] }, async (request) => {
+    const { id } = request.params as { id: string };
+
+    if (request.user.sub === id) {
+      throw new AppError(403, "AUTH_FORBIDDEN", "You cannot block your own account");
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id }
+    });
+
+    if (!user) {
+      throw new AppError(404, "NOT_FOUND", "User not found");
+    }
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data: {
+        isBlocked: true,
+        blockedAt: new Date()
+      },
+      select: {
+        id: true,
+        phone: true,
+        role: true,
+        isBlocked: true,
+        blockedAt: true
+      }
+    });
+
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "admin.block_user",
+      resource: "User",
+      resourceId: id,
+      payload: { previousBlocked: user.isBlocked, nextBlocked: true },
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
+
+    return ok(updated);
+  });
+
+  app.post("/admin/users/:id/unblock", { preHandler: [app.authenticateAdmin] }, async (request) => {
+    const { id } = request.params as { id: string };
+    const user = await prisma.user.findUnique({
+      where: { id }
+    });
+
+    if (!user) {
+      throw new AppError(404, "NOT_FOUND", "User not found");
+    }
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data: {
+        isBlocked: false,
+        blockedAt: null
+      },
+      select: {
+        id: true,
+        phone: true,
+        role: true,
+        isBlocked: true,
+        blockedAt: true
+      }
+    });
+
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "admin.unblock_user",
+      resource: "User",
+      resourceId: id,
+      payload: { previousBlocked: user.isBlocked, nextBlocked: false },
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
+
+    return ok(updated);
+  });
+
+  app.delete("/admin/users/:id", { preHandler: [app.authenticateAdmin] }, async (request) => {
+    const { id } = request.params as { id: string };
+
+    if (request.user.sub === id) {
+      throw new AppError(403, "AUTH_FORBIDDEN", "You cannot delete your own account");
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        phone: true,
+        role: true
+      }
+    });
+
+    if (!user) {
+      throw new AppError(404, "NOT_FOUND", "User not found");
+    }
+
+    await prisma.user.delete({
+      where: { id }
+    });
+
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "admin.delete_user",
+      resource: "User",
+      resourceId: id,
+      payload: user,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
+
+    return ok({ deleted: true, id });
   });
 }

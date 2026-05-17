@@ -70,9 +70,14 @@ function DashboardContent() {
               : "No property selected"}
           </p>
         </div>
-        <Button asChild className="shrink-0 w-full sm:w-auto">
-           <Link href="/payments/new">Record Rent</Link>
-        </Button>
+        <div className="flex gap-3 shrink-0 w-full sm:w-auto">
+          <Button asChild variant="outline" className="w-full sm:w-auto">
+             <Link href="/tenants">+ Add Tenant</Link>
+          </Button>
+          <Button asChild className="w-full sm:w-auto">
+             <Link href="/payments/new">Record Rent</Link>
+          </Button>
+        </div>
       </section>
 
       {/* Actionable Alerts */}

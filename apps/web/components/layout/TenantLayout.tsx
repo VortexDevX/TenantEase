@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Home, Wrench, FileText, LogOut } from "lucide-react";
+import { Home, Wrench, FileText, LogOut, Megaphone, ScrollText } from "lucide-react";
 
 interface TenantLayoutProps {
   children: React.ReactNode;
@@ -11,6 +11,8 @@ interface TenantLayoutProps {
 
 const tenantNavItems = [
   { icon: Home, label: "Home", href: "/tenant" },
+  { icon: Megaphone, label: "Notice", href: "/tenant/announcements" },
+  { icon: ScrollText, label: "Agreements", href: "/tenant/agreements" },
   { icon: Wrench, label: "Maintenance", href: "/tenant/maintenance" },
   { icon: FileText, label: "Receipts", href: "/tenant/receipts" },
 ];
