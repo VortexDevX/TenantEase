@@ -1,17 +1,28 @@
 import { FastifyInstance } from "fastify";
+import { env } from "../../lib/env.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
 
 // Basic authentication for external cron services if needed
-const CRON_SECRET = process.env.CRON_SECRET || "local_dev_cron_secret";
+function cronSecret() {
+  if (env.CRON_SECRET) {
+    return env.CRON_SECRET;
+  }
+
+  if (env.NODE_ENV === "production") {
+    throw new AppError(500, "CONFIG_ERROR", "CRON_SECRET is required in production");
+  }
+
+  return "local_dev_cron_secret";
+}
 
 export async function cronRoutes(app: FastifyInstance) {
   app.post("/cron/reminders", async (request, reply) => {
     
     // 1. Basic Authorization
     const authHeader = request.headers.authorization;
-    if (authHeader !== `Bearer ${CRON_SECRET}`) {
+    if (authHeader !== `Bearer ${cronSecret()}`) {
       app.log.warn("Unauthorized CRON execution attempt");
       throw new AppError(401, "AUTH_FORBIDDEN", "Unauthorized cron access");
     }
@@ -30,7 +41,7 @@ export async function cronRoutes(app: FastifyInstance) {
       });
 
       // 3. Mock processing reminders
-      const messagesSent: any[] = [];
+      const messagesSent: Array<{ tenantId: string; rentEntryId: string; amountPending: number }> = [];
       
       for (const rent of overdueRents) {
         if (!rent.tenant || rent.tenant.status === "VACATED") continue;
@@ -39,14 +50,13 @@ export async function cronRoutes(app: FastifyInstance) {
         app.log.info({
             event: "MOCK_SEND_REMINDER",
             tenantId: rent.tenant.id,
-            phone: rent.tenant.phone,
             amountDue: rent.amountDue - rent.amountPaid,
             rentEntryId: rent.id
-        }, `Sent reminder to ${rent.tenant.fullName} for ₹${(rent.amountDue - rent.amountPaid) / 100}`);
+        }, "Sent mock rent reminder");
 
         messagesSent.push({
             tenantId: rent.tenant.id,
-            phone: rent.tenant.phone,
+            rentEntryId: rent.id,
             amountPending: rent.amountDue - rent.amountPaid
         });
         
@@ -64,9 +74,9 @@ export async function cronRoutes(app: FastifyInstance) {
         remindersSent: messagesSent.length,
         messages: messagesSent 
       }));
-    } catch (e: any) {
+    } catch (e) {
       app.log.error(e, "Cron job failed");
-      throw new AppError(500, "INTERNAL_ERROR", e.message || "Failed to execute cron job");
+      throw new AppError(500, "INTERNAL_ERROR", "Failed to execute cron job");
     }
   });
 }

@@ -1,11 +1,26 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
+import { assertPropertyOwnership } from "../common/owner.js";
+import { computeRentStatus } from "../rent/service.js";
 
 const UtilityTypeEnum = z.enum(["ELECTRICITY", "WATER", "GAS", "INTERNET"]);
 const BillingModelEnum = z.enum(["FLAT_RATE", "PER_TENANT", "INDIVIDUAL_METER", "SHARED_METER"]);
+
+type UtilityCharge = {
+  type: z.infer<typeof UtilityTypeEnum>;
+  amount: number;
+  details?: string;
+};
+
+const utilityQuerySchema = z.object({
+  month: z.coerce.number().int().min(1).max(12).optional(),
+  year: z.coerce.number().int().min(2020).max(2100).optional(),
+  type: UtilityTypeEnum.default("ELECTRICITY")
+});
 
 const submitReadingsSchema = z.object({
   utilityType: UtilityTypeEnum,
@@ -24,27 +39,22 @@ export async function utilityRoutes(app: FastifyInstance) {
 
   // ─── GET /properties/:propertyId/utilities ───
   // Returns utility readings for a property, filtered by month/year/type
-  app.get("/properties/:propertyId/utilities", async (request, reply) => {
+  app.get("/properties/:propertyId/utilities", { preHandler: [app.authenticate] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
-    const query = request.query as Record<string, string>;
+    const query = utilityQuerySchema.parse(request.query);
+    await assertPropertyOwnership(propertyId, requireOwnerProfileId(request.user.ownerProfileId));
 
     const now = new Date();
-    const month = query.month ? parseInt(query.month, 10) : now.getMonth() + 1;
-    const year = query.year ? parseInt(query.year, 10) : now.getFullYear();
-    const utilityType = query.type || "ELECTRICITY";
-
-    // Verify property exists
-    const property = await prisma.property.findUnique({ where: { id: propertyId } });
-    if (!property) {
-      throw new AppError(404, "PROPERTY_NOT_FOUND", "Property not found");
-    }
+    const month = query.month ?? now.getMonth() + 1;
+    const year = query.year ?? now.getFullYear();
+    const utilityType = query.type;
 
     const readings = await prisma.utilityReading.findMany({
       where: {
         propertyId,
         month,
         year,
-        utilityType: utilityType as any,
+        utilityType,
       },
       include: {
         room: { select: { id: true, roomNumber: true, floor: true } },
@@ -76,15 +86,10 @@ export async function utilityRoutes(app: FastifyInstance) {
 
   // ─── POST /properties/:propertyId/utilities ───
   // Submit meter readings, compute charges, and apply to rent entries
-  app.post("/properties/:propertyId/utilities", async (request, reply) => {
+  app.post("/properties/:propertyId/utilities", { preHandler: [app.authenticate] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
     const body = submitReadingsSchema.parse(request.body);
-
-    // Verify property exists
-    const property = await prisma.property.findUnique({ where: { id: propertyId } });
-    if (!property) {
-      throw new AppError(404, "PROPERTY_NOT_FOUND", "Property not found");
-    }
+    await assertPropertyOwnership(propertyId, requireOwnerProfileId(request.user.ownerProfileId));
 
     const results: Array<{
       room: string;
@@ -185,8 +190,8 @@ export async function utilityRoutes(app: FastifyInstance) {
 
         if (rentEntry) {
           // Merge utility charge into existing utilityCharges array
-          const existing = (rentEntry.utilityCharges as any[] | null) || [];
-          const filtered = existing.filter((c: any) => c.type !== body.utilityType);
+          const existing = parseUtilityCharges(rentEntry.utilityCharges);
+          const filtered = existing.filter((charge) => charge.type !== body.utilityType);
           filtered.push({
             type: body.utilityType,
             amount: charge,
@@ -195,13 +200,13 @@ export async function utilityRoutes(app: FastifyInstance) {
 
           const utilityTotal = filtered.reduce((sum: number, c: any) => sum + c.amount, 0);
           const newTotal = rentEntry.amountDue - sumUtilityCharges(existing) + utilityTotal;
-          const newBalance = newTotal - rentEntry.amountPaid;
 
           await prisma.rentEntry.update({
             where: { id: rentEntry.id },
             data: {
               utilityCharges: filtered,
               amountDue: newTotal,
+              status: computeRentStatus(newTotal, rentEntry.amountPaid, rentEntry.dueDate),
             },
           });
         }
@@ -226,9 +231,30 @@ export async function utilityRoutes(app: FastifyInstance) {
   });
 }
 
-function sumUtilityCharges(charges: any[] | null): number {
-  if (!charges || !Array.isArray(charges)) return 0;
-  return charges.reduce((sum: number, c: any) => sum + (c.amount || 0), 0);
+function parseUtilityCharges(charges: unknown): UtilityCharge[] {
+  if (!Array.isArray(charges)) {
+    return [];
+  }
+
+  return charges.flatMap((charge) => {
+    if (
+      typeof charge === "object" &&
+      charge !== null &&
+      "type" in charge &&
+      "amount" in charge &&
+      UtilityTypeEnum.safeParse(charge.type).success &&
+      typeof charge.amount === "number" &&
+      Number.isFinite(charge.amount)
+    ) {
+      return [charge as UtilityCharge];
+    }
+
+    return [];
+  });
+}
+
+function sumUtilityCharges(charges: UtilityCharge[]): number {
+  return charges.reduce((sum, charge) => sum + charge.amount, 0);
 }
 
 function monthName(month: number): string {

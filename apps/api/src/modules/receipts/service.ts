@@ -31,7 +31,7 @@ export async function generateReceipt(paymentId: string, ownerProfileId: string)
   }
 
   if (payment.isVoided) {
-    throw new AppError(422, "PAYMENT_NOT_FOUND", "Cannot generate receipt for a voided payment");
+    throw new AppError(422, "VALIDATION_ERROR", "Cannot generate receipt for a voided payment");
   }
 
   if (payment.receipt) {
@@ -58,4 +58,3 @@ export async function generateReceipt(paymentId: string, ownerProfileId: string)
     }
   });
 }
-

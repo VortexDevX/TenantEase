@@ -1,9 +1,25 @@
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
 import { assertPropertyOwnership } from "../common/owner.js";
+
+const announcementCategorySchema = z.enum(["GENERAL", "MAINTENANCE", "PAYMENT", "RULE_CHANGE", "EMERGENCY"]);
+
+const announcementInputSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  content: z.string().trim().min(1).max(2000),
+  category: announcementCategorySchema,
+  isImportant: z.boolean().optional(),
+  targetFloor: z.coerce.number().int().min(0).max(200).nullable().optional(),
+  targetRoomId: z.string().uuid().nullable().optional()
+});
+
+const announcementUpdateSchema = announcementInputSchema.partial().refine((value) => Object.keys(value).length > 0, {
+  message: "At least one field is required"
+});
 
 export async function announcementRoutes(app: FastifyInstance) {
   // 13.1 List Announcements
@@ -46,13 +62,14 @@ export async function announcementRoutes(app: FastifyInstance) {
     
     await assertPropertyOwnership(params.propertyId, ownerProfileId);
 
-    const body = request.body as any; // Validation skipped to save lines
-    if (!body.title || !body.content || !body.category) {
-      throw new AppError(400, "VALIDATION_ERROR", "title, content, and category are required");
-    }
-
-    const targetFloor = body.targetFloor !== undefined ? Number(body.targetFloor) : null;
+    const body = announcementInputSchema.parse(request.body);
     const targetRoomId = body.targetRoomId || null;
+    if (targetRoomId) {
+      const room = await prisma.room.findFirst({ where: { id: targetRoomId, propertyId: params.propertyId } });
+      if (!room) {
+        throw new AppError(400, "VALIDATION_ERROR", "Target room does not belong to this property");
+      }
+    }
 
     const announcement = await prisma.announcement.create({
       data: {
@@ -61,7 +78,7 @@ export async function announcementRoutes(app: FastifyInstance) {
         content: body.content,
         category: body.category,
         isImportant: body.isImportant === true,
-        targetFloor: isNaN(targetFloor as number) ? null : targetFloor,
+        targetFloor: body.targetFloor ?? null,
         targetRoomId
       }
     });
@@ -79,10 +96,15 @@ export async function announcementRoutes(app: FastifyInstance) {
 
     await assertPropertyOwnership(target.propertyId, ownerProfileId);
 
-    const body = request.body as any;
+    const body = announcementUpdateSchema.parse(request.body);
     
-    const targetFloor = body.targetFloor !== undefined ? Number(body.targetFloor) : target.targetFloor;
     const targetRoomId = body.targetRoomId !== undefined ? body.targetRoomId : target.targetRoomId;
+    if (targetRoomId) {
+      const room = await prisma.room.findFirst({ where: { id: targetRoomId, propertyId: target.propertyId } });
+      if (!room) {
+        throw new AppError(400, "VALIDATION_ERROR", "Target room does not belong to this property");
+      }
+    }
 
     const updated = await prisma.announcement.update({
       where: { id: params.id },
@@ -91,8 +113,8 @@ export async function announcementRoutes(app: FastifyInstance) {
         content: body.content !== undefined ? body.content : target.content,
         category: body.category !== undefined ? body.category : target.category,
         isImportant: body.isImportant !== undefined ? Boolean(body.isImportant) : target.isImportant,
-        targetFloor: isNaN(targetFloor as number) ? null : targetFloor,
-        targetRoomId: targetRoomId === "" ? null : targetRoomId,
+        targetFloor: body.targetFloor !== undefined ? body.targetFloor : target.targetFloor,
+        targetRoomId,
       }
     });
 

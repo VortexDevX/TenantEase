@@ -1,15 +1,18 @@
 import { FastifyInstance } from "fastify";
+import { requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
+import { assertPropertyOwnership } from "../common/owner.js";
 
 export async function reportsRoutes(app: FastifyInstance) {
 
   // ─── GET /properties/:propertyId/reports/monthly ───
   // Monthly financial report with income, payments breakdown, occupancy, P&L
-  app.get("/properties/:propertyId/reports/monthly", async (request, reply) => {
+  app.get("/properties/:propertyId/reports/monthly", { preHandler: [app.authenticate] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
     const query = request.query as Record<string, string>;
+    await assertPropertyOwnership(propertyId, requireOwnerProfileId(request.user.ownerProfileId));
 
     const now = new Date();
     const month = query.month ? parseInt(query.month, 10) : now.getMonth() + 1;
@@ -89,9 +92,10 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   // ─── POST /properties/:propertyId/receipts/bulk ───
   // Generate receipts for all paid entries that don't have receipts yet
-  app.post("/properties/:propertyId/receipts/bulk", async (request, reply) => {
+  app.post("/properties/:propertyId/receipts/bulk", { preHandler: [app.authenticate] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
     const query = request.query as Record<string, string>;
+    await assertPropertyOwnership(propertyId, requireOwnerProfileId(request.user.ownerProfileId));
 
     const now = new Date();
     const month = query.month ? parseInt(query.month, 10) : now.getMonth() + 1;
@@ -143,9 +147,10 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   // ─── GET /properties/:propertyId/receipts/annual ───
   // Annual receipt summary for FY (April-March)
-  app.get("/properties/:propertyId/receipts/annual", async (request, reply) => {
+  app.get("/properties/:propertyId/receipts/annual", { preHandler: [app.authenticate] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
     const query = request.query as Record<string, string>;
+    await assertPropertyOwnership(propertyId, requireOwnerProfileId(request.user.ownerProfileId));
 
     const fy = query.fy ? parseInt(query.fy, 10) : (new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1);
     // FY = April <fy> to March <fy+1>
@@ -204,8 +209,9 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   // ─── POST /properties/:propertyId/late-fees/apply ───
   // Auto-calculate and apply late fees to overdue rent entries
-  app.post("/properties/:propertyId/late-fees/apply", async (request, reply) => {
+  app.post("/properties/:propertyId/late-fees/apply", { preHandler: [app.authenticate] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
+    await assertPropertyOwnership(propertyId, requireOwnerProfileId(request.user.ownerProfileId));
 
     const property = await prisma.property.findUnique({ where: { id: propertyId } });
     if (!property) throw new AppError(404, "PROPERTY_NOT_FOUND", "Property not found");

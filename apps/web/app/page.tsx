@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useProperty } from "@/lib/PropertyContext";
 import { useApi } from "@/lib/useApi";
 import { formatPaisa, formatPaisaShort, timeAgo } from "@/lib/format";
-import { BedDouble, DoorClosed, IndianRupee, AlertCircle, ArrowUpRight, Wrench, Clock, Users, Loader2 } from "lucide-react";
+import { BedDouble, DoorClosed, IndianRupee, AlertCircle, Clock, Loader2, ReceiptText, UserPlus, WalletCards } from "lucide-react";
 import Link from "next/link";
 import type { TenantDto, RentEntryDto } from "@tenantease/types";
 
@@ -61,49 +61,49 @@ function DashboardContent() {
     <div className="flex flex-col gap-8">
       
       {/* Welcome Section */}
-      <section className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 animate-slide-up stagger-1">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground mb-1">Overview</h1>
-          <p className="text-muted-foreground font-medium">
-            {activeProperty
-              ? `${activeProperty.name} — ${activeProperty.city}, ${activeProperty.state}`
-              : "No property selected"}
-          </p>
+      <section className="grid gap-5 lg:grid-cols-[1fr_360px] animate-slide-up stagger-1">
+        <div className="rounded-xl border border-border bg-card p-5 md:p-6 shadow-soft">
+          <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-strong">Owner workspace</p>
+              <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground md:text-4xl">Daily Control</h1>
+              <p className="mt-2 text-sm font-medium text-muted-foreground">
+                {activeProperty
+                  ? `${activeProperty.name} - ${activeProperty.city}, ${activeProperty.state}`
+                  : "Create a property to unlock rent, tenant, and maintenance workflows."}
+              </p>
+            </div>
+            <div className="flex gap-3 shrink-0 w-full sm:w-auto">
+              <Button asChild variant="outline" className="w-full sm:w-auto">
+                <Link href="/tenants"><UserPlus className="mr-2 h-4 w-4" />Add Tenant</Link>
+              </Button>
+              <Button asChild className="w-full sm:w-auto">
+                <Link href="/payments/new"><WalletCards className="mr-2 h-4 w-4" />Record Rent</Link>
+              </Button>
+            </div>
+          </div>
         </div>
-        <div className="flex gap-3 shrink-0 w-full sm:w-auto">
-          <Button asChild variant="outline" className="w-full sm:w-auto">
-             <Link href="/tenants">+ Add Tenant</Link>
-          </Button>
-          <Button asChild className="w-full sm:w-auto">
-             <Link href="/payments/new">Record Rent</Link>
-          </Button>
+
+        <div className="rounded-xl border border-primary/20 bg-primary text-primary-foreground p-5 shadow-float">
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-foreground/70">This month</p>
+          <div className="mt-3 flex items-end justify-between gap-3">
+            <div>
+              <p className="text-4xl font-bold">{collectionPct}%</p>
+              <p className="mt-1 text-sm font-medium text-primary-foreground/75">collection rate</p>
+            </div>
+            <ReceiptText className="h-10 w-10 text-primary-foreground/70" />
+          </div>
+          <div className="mt-5 h-2 overflow-hidden rounded-full bg-primary-foreground/20">
+            <div className="h-full rounded-full bg-primary-foreground transition-all duration-500" style={{ width: `${collectionPct}%` }}></div>
+          </div>
+          <p className="mt-3 text-xs font-medium text-primary-foreground/75">
+            {formatPaisaShort(totalPaid)} collected / {formatPaisaShort(totalDue)} expected
+          </p>
         </div>
       </section>
 
-      {/* Actionable Alerts */}
-      {overdueEntries.length > 0 && (
-        <section className="animate-slide-up stagger-2">
-          <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-4 flex gap-4 items-start relative overflow-hidden">
-             <div className="bg-destructive/10 p-2 rounded-full text-destructive shrink-0">
-               <AlertCircle size={20} className="text-destructive"/>
-             </div>
-             <div className="flex flex-col gap-1 items-start">
-                <h4 className="font-semibold text-destructive">
-                  {overdueEntries.length} Tenant{overdueEntries.length > 1 ? "s'" : "'s"} Rent is Overdue
-                </h4>
-                <p className="text-sm text-destructive/80 font-medium">
-                  Total outstanding amount: {formatPaisa(overdueTotal)}.
-                </p>
-                <Button variant="outline" size="sm" className="mt-2 h-8 text-destructive border-destructive/20 bg-destructive/5 hover:bg-destructive/10 hover:text-destructive">
-                  Review Defaults
-                </Button>
-             </div>
-          </div>
-        </section>
-      )}
-
       {/* KPI Row */}
-      <section className="grid grid-cols-2 md:grid-cols-3 gap-4 animate-slide-up stagger-3">
+      <section className="grid grid-cols-2 md:grid-cols-3 gap-4 animate-slide-up stagger-2">
         <Card className="border-border">
           <CardHeader className="p-4 pb-2 flex-row justify-between items-center space-y-0">
              <CardDescription className="font-semibold uppercase tracking-wider text-xs">Occupied Beds</CardDescription>
@@ -146,6 +146,28 @@ function DashboardContent() {
           </CardContent>
         </Card>
       </section>
+
+      {/* Actionable Alerts */}
+      {overdueEntries.length > 0 && (
+        <section className="animate-slide-up stagger-3">
+          <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-4 flex gap-4 items-start relative overflow-hidden">
+             <div className="bg-destructive/10 p-2 rounded-lg text-destructive shrink-0">
+               <AlertCircle size={20} className="text-destructive"/>
+             </div>
+             <div className="flex flex-col gap-1 items-start">
+                <h4 className="font-semibold text-destructive">
+                  {overdueEntries.length} tenant{overdueEntries.length > 1 ? "s have" : " has"} overdue rent
+                </h4>
+                <p className="text-sm text-destructive/80 font-medium">
+                  Outstanding total: {formatPaisa(overdueTotal)}.
+                </p>
+                <Button asChild variant="outline" size="sm" className="mt-2 h-8 text-destructive border-destructive/20 bg-destructive/5 hover:bg-destructive/10 hover:text-destructive">
+                  <Link href="/payments">Review Dues</Link>
+                </Button>
+             </div>
+          </div>
+        </section>
+      )}
 
       {/* Activity Log Grid */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-slide-up stagger-4">

@@ -19,9 +19,34 @@ export function CsvImportModal({ propertyId, onClose, onSuccess }: Props) {
   const [result, setResult] = useState<{ successCount: number; errors: {row: number, error: string}[] } | null>(null);
 
   const handleDownloadTemplate = () => {
-    // This is simple redirect to the API that returns text/csv header
-    const token = localStorage.getItem("te_access_token");
-    window.open(`${API_URL}/properties/${propertyId}/tenants/import/template?token=${token}`, "_blank");
+    const downloadTemplate = async () => {
+      setError(null);
+      try {
+        const token = localStorage.getItem("te_access_token");
+        const res = await fetch(`${API_URL}/properties/${propertyId}/tenants/import/template`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+
+        if (!res.ok) {
+          const json = await res.json().catch(() => null);
+          throw new Error(json?.error?.message || "Failed to download template");
+        }
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "tenants_template.csv";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      } catch (err: any) {
+        setError(err.message || "Failed to download template");
+      }
+    };
+
+    void downloadTemplate();
   };
 
   const handleUpload = async () => {

@@ -46,12 +46,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const initAuth = async () => {
+      const currentPath = pathname || (typeof window !== "undefined" ? window.location.pathname : "");
       const token = localStorage.getItem("te_access_token");
+      if (PUBLIC_PATHS.includes(currentPath)) {
+        setIsLoading(false);
+        if (token) {
+          try {
+            const userData = await fetchApi<User>("/auth/me");
+            setUser(userData);
+            router.replace(roleHomePath(userData.role));
+          } catch {
+            localStorage.removeItem("te_access_token");
+            setUser(null);
+          }
+        }
+        return;
+      }
+
       if (!token) {
         setIsLoading(false);
-        if (!PUBLIC_PATHS.includes(pathname)) {
-          router.replace("/login");
-        }
+        router.replace("/login");
         return;
       }
 
@@ -59,17 +73,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const userData = await fetchApi<User>("/auth/me");
         setUser(userData);
 
-        if (PUBLIC_PATHS.includes(pathname)) {
-          router.replace(roleHomePath(userData.role));
-        } else if (userData.role === "OWNER" && !userData.displayName && pathname !== "/onboarding") {
+        if (userData.role === "OWNER" && !userData.displayName && currentPath !== "/onboarding") {
           router.replace("/onboarding");
         }
       } catch {
         localStorage.removeItem("te_access_token");
         setUser(null);
-        if (!PUBLIC_PATHS.includes(pathname)) {
-          router.replace("/login");
-        }
+        router.replace("/login");
       } finally {
         setIsLoading(false);
       }
@@ -95,7 +105,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push("/login");
   }, [router]);
 
-  if (isLoading) {
+  const renderPath = pathname || (typeof window !== "undefined" ? window.location.pathname : "");
+
+  if (isLoading && !PUBLIC_PATHS.includes(renderPath)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
