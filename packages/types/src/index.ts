@@ -21,6 +21,7 @@ export type ApiErrorCode =
   | "INVALID_TRANSFER"
   | "PAYMENT_TOO_OLD"
   | "RATE_LIMITED"
+  | "CONFIG_ERROR"
   | "INTERNAL_ERROR";
 
 export type ApiSuccess<T> = {

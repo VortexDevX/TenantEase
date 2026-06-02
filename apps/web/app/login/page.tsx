@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Shield } from "lucide-react";
+import { ArrowRight, Building2, KeyRound, Loader2, ReceiptText, ShieldCheck, Smartphone } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { fetchApi } from "../../lib/api-client";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -18,7 +19,11 @@ export default function LoginPage() {
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (phone.length !== 10) {
+    const form = e.currentTarget as HTMLFormElement;
+    const submittedPhone = String(new FormData(form).get("phone") ?? "").replace(/\D/g, "");
+    setPhone(submittedPhone);
+
+    if (submittedPhone.length !== 10) {
       setError("Please enter a valid 10-digit phone number");
       return;
     }
@@ -28,7 +33,7 @@ export default function LoginPage() {
     try {
       const res = await fetchApi<{ challengeId: string; debugOtp?: string }>("/auth/send-otp", {
         method: "POST",
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone: submittedPhone }),
       });
       setChallengeId(res.challengeId);
       setDebugOtp(res.debugOtp ?? "");
@@ -45,7 +50,11 @@ export default function LoginPage() {
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (otp.length !== 6) {
+    const form = e.currentTarget as HTMLFormElement;
+    const submittedOtp = String(new FormData(form).get("otp") ?? "").replace(/\D/g, "");
+    setOtp(submittedOtp);
+
+    if (submittedOtp.length !== 6) {
       setError("Please enter a valid 6-digit OTP");
       return;
     }
@@ -55,7 +64,7 @@ export default function LoginPage() {
     try {
       const res = await fetchApi<any>("/auth/verify-otp", {
         method: "POST",
-        body: JSON.stringify({ phone, otp, challengeId }),
+        body: JSON.stringify({ phone, otp: submittedOtp, challengeId }),
       });
       login(res.accessToken, res.user, res.isNewUser);
     } catch (err: any) {
@@ -66,47 +75,98 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center">
-          <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center">
-            <Shield className="w-8 h-8 text-primary" />
+    <div className="min-h-screen grid lg:grid-cols-[1.05fr_0.95fr]">
+      <section className="hidden lg:flex flex-col justify-between border-r border-border bg-card p-10">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-soft">
+            <Building2 className="h-6 w-6" />
+          </div>
+          <div>
+            <p className="text-xl font-bold tracking-tight">TenantEase</p>
+            <p className="text-sm font-medium text-muted-foreground">PG management for Indian owners</p>
           </div>
         </div>
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          Welcome to TenantEase
-        </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
-          {step === "PHONE"
-            ? "Enter your mobile number to continue"
-            : `We sent a code to +91 ${phone}`}
-        </p>
-      </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-xl sm:px-10 border border-gray-100">
+        <div className="max-w-xl">
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-strong">Owner and tenant portal</p>
+          <h1 className="mt-4 text-5xl font-bold leading-tight tracking-tight text-foreground">
+            Rent, rooms, receipts, and requests in one steady workspace.
+          </h1>
+          <p className="mt-5 text-base font-medium leading-7 text-muted-foreground">
+            Sign in with phone OTP. TenantEase detects your role and routes you to the right dashboard.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { icon: ReceiptText, label: "Receipts", value: "Auto PDFs" },
+            { icon: ShieldCheck, label: "Access", value: "Role based" },
+            { icon: Building2, label: "Properties", value: "Multi PG" },
+          ].map((item) => {
+            const Icon = item.icon;
+            return (
+              <div key={item.label} className="rounded-xl border border-border bg-secondary/40 p-4">
+                <Icon className="h-5 w-5 text-primary" />
+                <p className="mt-4 text-sm font-bold text-foreground">{item.label}</p>
+                <p className="mt-1 text-xs font-medium text-muted-foreground">{item.value}</p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <main className="flex min-h-screen items-center justify-center px-4 py-10">
+        <div className="w-full max-w-md">
+          <div className="mb-8 lg:hidden">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <Building2 className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-lg font-bold">TenantEase</p>
+                <p className="text-xs font-medium text-muted-foreground">PG command center</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-card p-5 shadow-float sm:p-7">
+          <div className="mb-6">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              {step === "PHONE" ? <Smartphone className="h-6 w-6" /> : <KeyRound className="h-6 w-6" />}
+            </div>
+            <h2 className="text-2xl font-bold tracking-tight text-foreground">
+              {step === "PHONE" ? "Sign in with mobile" : "Enter OTP"}
+            </h2>
+            <p className="mt-2 text-sm font-medium text-muted-foreground">
+              {step === "PHONE"
+                ? "Use your 10-digit Indian mobile number."
+                : `Code sent to +91 ${phone}.`}
+            </p>
+          </div>
+
           {error && (
-            <div className="mb-4 bg-red-50 p-4 rounded-md">
-              <p className="text-sm text-red-700 font-medium">{error}</p>
+            <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 p-4">
+              <p className="text-sm font-medium text-destructive">{error}</p>
             </div>
           )}
 
           {step === "PHONE" ? (
             <form className="space-y-6" onSubmit={handleSendOtp}>
               <div>
-                <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="phone" className="block text-sm font-semibold text-foreground">
                   Mobile Number
                 </label>
-                <div className="mt-1 relative rounded-md shadow-sm">
+                <div className="mt-2 relative rounded-lg shadow-sm">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <span className="text-gray-500 sm:text-sm">+91</span>
+                    <span className="text-muted-foreground sm:text-sm">+91</span>
                   </div>
                   <input
                     type="tel"
                     id="phone"
+                    name="phone"
                     required
                     maxLength={10}
-                    className="flex h-11 w-full rounded-md border border-input bg-background pl-12 pr-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex h-12 w-full rounded-lg border border-input bg-background pl-12 pr-3 py-2 text-sm font-medium ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     placeholder="99999 99999"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
@@ -114,28 +174,30 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <button
+              <Button
                 type="submit"
-                disabled={loading || phone.length !== 10}
-                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                disabled={loading}
+                className="w-full"
               >
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRight className="mr-2 h-4 w-4" />}
                 {loading ? "Sending OTP..." : "Continue"}
-              </button>
+              </Button>
             </form>
           ) : (
             <form className="space-y-6" onSubmit={handleVerifyOtp}>
               <div>
-                <label htmlFor="otp" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="otp" className="block text-sm font-semibold text-foreground">
                   Enter 6-digit OTP
                 </label>
                 <div className="mt-1">
                   <input
                     type="text"
                     id="otp"
+                    name="otp"
                     required
                     maxLength={6}
                     autoFocus
-                    className="flex h-11 w-full text-center tracking-widest text-lg rounded-md border border-input bg-background px-3 py-2 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex h-12 w-full text-center text-lg font-bold rounded-lg border border-input bg-background px-3 py-2 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     placeholder="------"
                     value={otp}
                     onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
@@ -144,13 +206,14 @@ export default function LoginPage() {
               </div>
 
               <div className="flex flex-col gap-3">
-                <button
+                <Button
                   type="submit"
-                  disabled={loading || otp.length !== 6}
-                  className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  disabled={loading}
+                  className="w-full"
                 >
+                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
                   {loading ? "Verifying..." : "Verify & Sign In"}
-                </button>
+                </Button>
                 <button
                   type="button"
                     onClick={() => {
@@ -159,7 +222,7 @@ export default function LoginPage() {
                       setDebugOtp("");
                       setError("");
                     }}
-                  className="w-full py-2 text-sm text-gray-500 hover:text-gray-900 transition-colors"
+                  className="w-full py-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Change Mobile Number
                 </button>
@@ -168,30 +231,20 @@ export default function LoginPage() {
           )}
 
           {step === "OTP" && debugOtp ? (
-            <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Local Debug OTP</p>
-              <p className="mt-1 text-base font-bold tracking-[0.35em] text-emerald-900">{debugOtp}</p>
+            <div className="mt-4 rounded-lg border border-success/20 bg-success/10 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-success">Local Debug OTP</p>
+              <p className="mt-1 text-base font-bold text-foreground">{debugOtp}</p>
             </div>
           ) : null}
 
-          <div className="mt-8">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">
-                  Bank-Grade Encryption
-                </span>
-              </div>
-            </div>
+          <div className="mt-6 rounded-lg border border-border bg-secondary/40 px-4 py-3">
+            <p className="text-xs font-medium leading-5 text-muted-foreground">
+              Role auto-detected after OTP. Owners, tenants, and admins land in separate protected areas.
+            </p>
           </div>
         </div>
-
-        <p className="mt-6 text-center text-xs text-gray-400">
-          Your role is automatically detected. No registration needed.
-        </p>
-      </div>
+        </div>
+      </main>
     </div>
   );
 }

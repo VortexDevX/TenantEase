@@ -1,11 +1,12 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
+import { storageProvider } from "../../providers/mock-providers.js";
+import { assertTenantOwnership } from "../common/owner.js";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import path from "path";
-import fs from "fs";
 
 const createAgreementSchema = z.object({
   templateType: z.string().default("pg"),
@@ -20,9 +21,10 @@ export async function agreementRoutes(app: FastifyInstance) {
 
   // ─── POST /tenants/:tenantId/agreements ───
   // Generate a rental agreement PDF for a tenant
-  app.post("/tenants/:tenantId/agreements", async (request, reply) => {
+  app.post("/tenants/:tenantId/agreements", { preHandler: [app.authenticate] }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
     const body = createAgreementSchema.parse(request.body);
+    await assertTenantOwnership(tenantId, requireOwnerProfileId(request.user.ownerProfileId));
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -163,13 +165,8 @@ export async function agreementRoutes(app: FastifyInstance) {
     drawText(`Date: ${new Date().toLocaleDateString("en-IN")}`, { size: 9 });
 
     const pdfBytes = await pdfDoc.save();
-    
-    // Save PDF
-    const pdfDir = path.join(process.cwd(), "storage", "agreements");
-    fs.mkdirSync(pdfDir, { recursive: true });
     const fileName = `agreement-${tenantId}-${Date.now()}.pdf`;
-    const filePath = path.join(pdfDir, fileName);
-    fs.writeFileSync(filePath, pdfBytes);
+    const filePath = await storageProvider.saveBuffer(`agreements/${fileName}`, Buffer.from(pdfBytes));
 
     // Save to DB
     const agreement = await prisma.agreement.create({
@@ -183,22 +180,23 @@ export async function agreementRoutes(app: FastifyInstance) {
         duration: body.duration,
         customClauses: body.customClauses,
         agreementData,
-        pdfPath: `/storage/agreements/${fileName}`,
+        pdfPath: filePath,
         status: "draft",
       },
     });
 
     return reply.status(201).send(ok({
       id: agreement.id,
-      pdfUrl: `/storage/agreements/${fileName}`,
+      pdfUrl: `/agreements/${agreement.id}/download`,
       status: agreement.status,
     }));
   });
 
   // ─── GET /tenants/:tenantId/agreements ───
   // List agreements for a tenant
-  app.get("/tenants/:tenantId/agreements", async (request, reply) => {
+  app.get("/tenants/:tenantId/agreements", { preHandler: [app.authenticate] }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
+    await assertTenantOwnership(tenantId, requireOwnerProfileId(request.user.ownerProfileId));
 
     const agreements = await prisma.agreement.findMany({
       where: { tenantId },
@@ -214,7 +212,7 @@ export async function agreementRoutes(app: FastifyInstance) {
       startDate: a.startDate.toISOString(),
       endDate: a.endDate?.toISOString() ?? null,
       duration: a.duration,
-      pdfUrl: a.pdfPath,
+      pdfUrl: `/agreements/${a.id}/download`,
       status: a.status,
       createdAt: a.createdAt.toISOString(),
     }));
@@ -224,23 +222,28 @@ export async function agreementRoutes(app: FastifyInstance) {
 
   // ─── GET /agreements/:agreementId/download ───
   // Download agreement PDF
-  app.get("/agreements/:agreementId/download", async (request, reply) => {
+  app.get("/agreements/:agreementId/download", { preHandler: [app.authenticate] }, async (request, reply) => {
     const { agreementId } = request.params as { agreementId: string };
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
 
     const agreement = await prisma.agreement.findUnique({
       where: { id: agreementId },
+      include: {
+        property: true,
+      },
     });
 
-    if (!agreement || !agreement.pdfPath) {
+    if (!agreement || !agreement.pdfPath || agreement.property.ownerProfileId !== ownerProfileId) {
       throw new AppError(404, "NOT_FOUND", "Agreement not found");
     }
 
-    const absolutePath = path.join(process.cwd(), agreement.pdfPath);
-    if (!fs.existsSync(absolutePath)) {
+    let pdfBuffer: Buffer;
+    try {
+      pdfBuffer = await storageProvider.readBuffer(agreement.pdfPath);
+    } catch {
       throw new AppError(404, "NOT_FOUND", "Agreement PDF file not found");
     }
 
-    const pdfBuffer = fs.readFileSync(absolutePath);
     return reply
       .header("Content-Type", "application/pdf")
       .header("Content-Disposition", `attachment; filename="agreement-${agreementId}.pdf"`)

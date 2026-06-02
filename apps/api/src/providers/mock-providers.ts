@@ -15,17 +15,17 @@ class MockOtpProvider {
   async send(phone: string, otpCode: string, challengeId: string) {
     this.lastSent.unshift({ phone, otpCode, challengeId });
     this.lastSent = this.lastSent.slice(0, 20);
-    console.info(`[mock-otp] ${phone}: ${otpCode}`);
+    console.info(`[mock-otp] ${maskPhone(phone)} challenge=${challengeId}`);
   }
 }
 
 class MockNotificationProvider {
   async sendSms(phone: string, message: string) {
-    console.info(`[mock-sms] To ${phone}: ${message}`);
+    console.info(`[mock-sms] To ${maskPhone(phone)} length=${message.length}`);
   }
 
   async sendWhatsApp(phone: string, message: string) {
-    console.info(`[mock-whatsapp] To ${phone}: ${message}`);
+    console.info(`[mock-whatsapp] To ${maskPhone(phone)} length=${message.length}`);
   }
 }
 
@@ -35,16 +35,32 @@ export interface IStorageProvider {
 }
 
 class LocalStorageProvider implements IStorageProvider {
+  private baseDir() {
+    return path.resolve(process.cwd(), env.STORAGE_DIR);
+  }
+
+  private resolveInsideBase(filePath: string) {
+    const baseDir = this.baseDir();
+    const target = path.isAbsolute(filePath)
+      ? path.resolve(filePath)
+      : path.resolve(baseDir, filePath);
+
+    if (target !== baseDir && !target.startsWith(`${baseDir}${path.sep}`)) {
+      throw new Error("Storage path escapes configured storage directory");
+    }
+
+    return target;
+  }
+
   async saveBuffer(relativePath: string, buffer: Buffer) {
-    const baseDir = path.resolve(process.cwd(), env.STORAGE_DIR);
-    const target = path.resolve(baseDir, relativePath);
+    const target = this.resolveInsideBase(relativePath);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, buffer);
     return target;
   }
 
   async readBuffer(filePath: string) {
-    return fs.readFile(filePath);
+    return fs.readFile(this.resolveInsideBase(filePath));
   }
 }
 
@@ -97,3 +113,7 @@ export const storageProvider: IStorageProvider = new LocalStorageProvider();
 export const pdfProvider = new PdfProvider();
 export const notificationProvider = new MockNotificationProvider();
 
+function maskPhone(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  return digits.length >= 4 ? `***${digits.slice(-4)}` : "***";
+}

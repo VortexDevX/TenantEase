@@ -6,6 +6,11 @@ import { fetchApi } from "../../lib/api-client";
 import { useAuth } from "../../contexts/AuthContext";
 
 type Step = 1 | 2 | 3 | 4;
+type OnboardingPropertyType = "PG" | "HOSTEL" | "FLAT";
+
+function isOnboardingPropertyType(value: string): value is OnboardingPropertyType {
+  return value === "PG" || value === "HOSTEL" || value === "FLAT";
+}
 
 export default function OnboardingPage() {
   const [step, setStep] = useState<Step>(1);
@@ -21,7 +26,7 @@ export default function OnboardingPage() {
   const [propName, setPropName] = useState("");
   const [propAddress, setPropAddress] = useState("");
   const [propCity, setPropCity] = useState("");
-  const [propType, setPropType] = useState<"PG" | "HOSTEL" | "FLAT">("PG");
+  const [propType, setPropType] = useState<OnboardingPropertyType>("PG");
   
   // Room State
   const [rooms, setRooms] = useState([{ roomNumber: "", type: "SINGLE", bedCount: 1, monthlyRent: "" }]);
@@ -206,7 +211,12 @@ export default function OnboardingPage() {
                   <label className="block text-sm font-medium text-gray-700">Type</label>
                   <select
                     className="mt-1 flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={propType} onChange={(e) => setPropType(e.target.value as any)}
+                    value={propType}
+                    onChange={(e) => {
+                      if (isOnboardingPropertyType(e.target.value)) {
+                        setPropType(e.target.value);
+                      }
+                    }}
                   >
                     <option value="PG">PG / Co-living</option>
                     <option value="HOSTEL">Hostel</option>

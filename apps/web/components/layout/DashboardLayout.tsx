@@ -28,15 +28,18 @@ function LayoutShell({ children, activePath }: LayoutProps) {
   const propertyName = propLoading ? "Loading..." : (activeProperty?.name ?? "No Property");
 
   return (
-    <div className="min-h-screen bg-background pb-20 md:pb-0 md:pl-64 flex flex-col relative w-full">
+    <div className="min-h-screen pb-20 md:pb-0 md:pl-72 flex flex-col relative w-full">
       
       {/* Desktop Sidebar */}
-      <aside className="fixed left-0 top-0 bottom-0 w-64 bg-card border-r border-border hidden md:flex flex-col gap-6 p-6 z-40">
+      <aside className="fixed left-0 top-0 bottom-0 w-72 bg-card/95 border-r border-border hidden md:flex flex-col gap-6 p-6 z-40 shadow-[8px_0_32px_rgba(15,23,42,0.04)]">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-primary text-primary-foreground flex justify-center items-center font-bold text-xl shadow-soft">
             T
           </div>
-          <span className="font-bold text-lg text-foreground tracking-tight">TenantEase</span>
+          <div className="flex flex-col">
+            <span className="font-bold text-lg text-foreground tracking-tight">TenantEase</span>
+            <span className="text-xs font-medium text-muted-foreground">PG command center</span>
+          </div>
         </div>
 
         <div className="mt-4 flex flex-col gap-3">
@@ -44,7 +47,7 @@ function LayoutShell({ children, activePath }: LayoutProps) {
           <select
             value={activeProperty?.id ?? ""}
             onChange={(event) => setActivePropertyId(event.target.value)}
-            className="h-11 rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground outline-none transition-colors focus:border-primary"
+            className="h-11 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground outline-none transition-colors focus:border-primary"
             disabled={propLoading || properties.length === 0}
           >
             {properties.length === 0 ? <option value="">No properties yet</option> : null}
@@ -66,11 +69,11 @@ function LayoutShell({ children, activePath }: LayoutProps) {
                 href={item.href}
                 className={`flex items-center gap-4 px-4 py-3 rounded-lg font-medium transition-all ${
                   isActive 
-                    ? "bg-primary/10 text-primary-strong" 
+                    ? "bg-primary text-primary-foreground shadow-soft"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                 }`}
               >
-                <Icon className={`w-5 h-5 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
+                <Icon className={`w-5 h-5 ${isActive ? "text-primary-foreground" : "text-muted-foreground"}`} />
                 {item.label}
               </Link>
             )
@@ -78,7 +81,7 @@ function LayoutShell({ children, activePath }: LayoutProps) {
         </nav>
 
         <div className="mt-auto flex flex-col gap-3">
-          <div className="p-4 bg-secondary rounded-xl flex items-center justify-between border border-border">
+          <div className="p-4 bg-secondary rounded-lg flex items-center justify-between border border-border">
               <div className="flex flex-col">
                 <span className="text-sm font-semibold tracking-tight text-foreground">{propertyName}</span>
                 <span className="text-xs text-muted-foreground">
@@ -100,7 +103,7 @@ function LayoutShell({ children, activePath }: LayoutProps) {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-5xl mx-auto p-4 md:p-8 animate-fade-in relative">
+      <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 lg:p-10 animate-fade-in relative">
         <header className="flex md:hidden items-center justify-between py-2 mb-6">
           <div className="flex items-center gap-3">
              <div className="w-8 h-8 rounded-md bg-primary text-primary-foreground flex justify-center items-center font-bold shadow-soft">
@@ -108,7 +111,7 @@ function LayoutShell({ children, activePath }: LayoutProps) {
             </div>
             <span className="font-bold text-foreground">TenantEase</span>
           </div>
-          <div className="text-sm font-semibold px-3 py-1.5 rounded-full bg-card border border-border text-foreground">
+          <div className="max-w-[44vw] truncate text-sm font-semibold px-3 py-1.5 rounded-lg bg-card border border-border text-foreground">
              {propertyName}
           </div>
         </header>
@@ -118,7 +121,7 @@ function LayoutShell({ children, activePath }: LayoutProps) {
           <select
             value={activeProperty?.id ?? ""}
             onChange={(event) => setActivePropertyId(event.target.value)}
-            className="h-11 w-full rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground outline-none transition-colors focus:border-primary"
+            className="h-11 w-full rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground outline-none transition-colors focus:border-primary"
             disabled={propLoading || properties.length === 0}
           >
             {properties.length === 0 ? <option value="">No properties yet</option> : null}
@@ -134,27 +137,29 @@ function LayoutShell({ children, activePath }: LayoutProps) {
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border flex md:hidden items-center justify-around p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] z-40 px-4 shadow-[0_-4px_24px_rgba(0,0,0,0.04)]">
-         {navItems.map((item) => {
+      <nav className="fixed bottom-0 left-0 right-0 bg-card/95 border-t border-border md:hidden z-40 shadow-[0_-4px_24px_rgba(0,0,0,0.06)]">
+        <div className="flex items-center gap-1 overflow-x-auto scrollbar-none px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+          {navItems.map((item) => {
             const isActive = activePath === item.href;
             const Icon = item.icon;
             return (
               <Link 
                 key={item.href} 
                 href={item.href}
-                className={`flex flex-col items-center justify-center gap-1 w-16 h-14 rounded-xl transition-all ${
+                className={`flex flex-none flex-col items-center justify-center gap-1 w-20 h-14 rounded-lg transition-all ${
                   isActive 
-                     ? "text-primary-strong font-semibold" 
+                    ? "bg-primary text-primary-foreground font-semibold"
                     : "text-muted-foreground font-medium"
                 }`}
               >
-                <div className={`flex items-center justify-center w-8 h-8 rounded-full ${isActive ? 'bg-primary/10' : 'bg-transparent'}`}>
+                <div className="flex items-center justify-center w-7 h-7 rounded-md">
                   <Icon className={`w-5 h-5 ${isActive ? "scale-110" : ""}`} strokeWidth={isActive ? 2.5 : 2} />
                 </div>
                 <span className="text-[10px] tracking-tight">{item.label}</span>
               </Link>
             )
           })}
+        </div>
       </nav>
 
     </div>

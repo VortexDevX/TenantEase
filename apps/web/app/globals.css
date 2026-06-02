@@ -44,9 +44,12 @@
     border-color: hsl(var(--border));
   }
   body {
-    background-color: hsl(var(--background));
+    background:
+      linear-gradient(135deg, rgba(15, 118, 110, 0.08), transparent 32%),
+      linear-gradient(225deg, rgba(180, 83, 9, 0.08), transparent 28%),
+      hsl(var(--background));
     color: hsl(var(--foreground));
-    letter-spacing: -0.025em;
+    letter-spacing: 0;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
@@ -66,6 +69,18 @@
   .stagger-3 { animation-delay: 150ms; }
   .stagger-4 { animation-delay: 200ms; }
   .stagger-5 { animation-delay: 250ms; }
+
+  .tracking-tight {
+    letter-spacing: 0;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 @keyframes fadeIn {

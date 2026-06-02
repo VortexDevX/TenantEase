@@ -140,9 +140,11 @@ describe("Tenant Flow Integration", () => {
   });
 
   afterAll(async () => {
-    await prisma.user.deleteMany({
-      where: { phone: { in: Array.from(createdPhones) } }
-    });
+    if (createdPhones.size > 0) {
+      await prisma.user.deleteMany({
+        where: { phone: { in: Array.from(createdPhones) } }
+      });
+    }
     await app.close();
   });
 
@@ -218,7 +220,8 @@ describe("Tenant Flow Integration", () => {
 
     const syncRes = await app.inject({
       method: "POST",
-      url: "/system/sync-occupancy"
+      url: "/system/sync-occupancy",
+      headers: { authorization: "Bearer local_dev_cron_secret" }
     });
 
     expect(syncRes.statusCode).toBe(200);
