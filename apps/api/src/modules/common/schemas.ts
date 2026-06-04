@@ -17,6 +17,14 @@ export const propertyInputSchema = z.object({
   type: z.enum(["PG", "HOSTEL", "FLAT", "HOUSE"])
 });
 
+export const propertySettingsSchema = z.object({
+  rentDueDay: z.number().int().min(1).max(28),
+  lateFeePerDay: z.number().int().min(0).max(100000).default(0),
+  lateFeeGraceDays: z.number().int().min(0).max(30).default(0),
+  ownerPan: z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/).optional().nullable(),
+  contactPhone: z.string().regex(/^\d{10}$/).optional().nullable()
+});
+
 export const roomInputSchema = z.object({
   roomNumber: z.string().min(1).max(20),
   floor: z.number().int().min(0).max(100).optional().nullable().default(0),
@@ -38,11 +46,17 @@ export const tenantInputSchema = z.object({
 });
 
 export const transferInputSchema = z.object({
-  roomId: uuidSchema
+  roomId: uuidSchema,
+  effectiveDate: z.string().datetime().or(z.string().date()).optional(),
+  monthlyRent: z.number().int().min(1).optional(),
+  note: z.string().max(500).optional().nullable()
 });
 
 export const vacateInputSchema = z.object({
-  vacatedAt: z.string().date()
+  vacatedAt: z.string().datetime().or(z.string().date()),
+  damageDeduction: z.number().int().min(0).default(0),
+  refundStatus: z.enum(["refunded", "pending", "no_refund"]).default("pending"),
+  finalNotes: z.string().max(1000).optional().nullable()
 });
 
 export const paymentInputSchema = z.object({
@@ -50,14 +64,34 @@ export const paymentInputSchema = z.object({
   amount: z.number().int().min(1),
   mode: z.enum(["CASH", "UPI", "BANK_TRANSFER", "ONLINE"]),
   paidAt: z.string().datetime().or(z.string().date()),
+  referenceNumber: z.string().max(100).optional().nullable(),
   note: z.string().max(255).optional().nullable()
 });
 
 export const paymentUpdateSchema = z.object({
   amount: z.number().int().min(1).optional(),
   mode: z.enum(["CASH", "UPI", "BANK_TRANSFER", "ONLINE"]).optional(),
+  paidAt: z.string().datetime().or(z.string().date()).optional(),
+  referenceNumber: z.string().max(100).optional().nullable(),
   note: z.string().max(255).optional().nullable(),
   isVoided: z.boolean().optional()
+});
+
+export const reminderConfigSchema = z.object({
+  preDueDays: z.number().int().min(0).max(30),
+  onDueEnabled: z.boolean(),
+  overdueFrequency: z.enum(["DAILY", "WEEKLY"]),
+  inAppEnabled: z.boolean(),
+  smsEnabled: z.boolean(),
+  whatsappEnabled: z.boolean(),
+  emailEnabled: z.boolean(),
+  friendlyTemplate: z.string().min(10).max(500),
+  overdueTemplate: z.string().min(10).max(500)
+});
+
+export const reminderSendSchema = z.object({
+  mode: z.enum(["PRE_DUE", "ON_DUE", "OVERDUE"]).default("OVERDUE"),
+  billingMonth: z.string().regex(/^\d{4}-\d{2}$/).optional()
 });
 
 export const maintenanceCreateSchema = z.object({

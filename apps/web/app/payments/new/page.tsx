@@ -11,7 +11,7 @@ import { useApi } from "@/lib/useApi";
 import { fetchApi } from "@/lib/api-client";
 import { formatPaisa } from "@/lib/format";
 import { IndianRupee, Search, CheckCircle2, ChevronRight, Banknote, CreditCard, Building, Loader2, Send } from "lucide-react";
-import type { TenantDto, RentEntryDto, PaymentDto, ReceiptDto } from "@tenantease/types";
+import type { TenantDto, RentEntryDto, PaymentWithReceiptDto } from "@tenantease/types";
 
 function getInitials(name: string): string {
   return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
@@ -30,6 +30,7 @@ function RecordPaymentContent() {
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(searchParams.get("tenantId"));
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<"UPI" | "CASH" | "BANK_TRANSFER">("UPI");
+  const [referenceNumber, setReferenceNumber] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [generatedReceiptId, setGeneratedReceiptId] = useState<string | null>(null);
@@ -63,25 +64,17 @@ function RecordPaymentContent() {
 
     setSubmitting(true);
     try {
-      const paymentData = await fetchApi<PaymentDto>("/payments", {
+      const paymentData = await fetchApi<PaymentWithReceiptDto>("/payments", {
         method: "POST",
         body: JSON.stringify({
           rentEntryId: unpaidEntry.id,
           amount: Math.round(parseFloat(amount) * 100), // convert to paisa
           mode: method,
           paidAt: new Date().toISOString(),
+          referenceNumber: referenceNumber || null,
         }),
       });
-      
-      try {
-         const receiptData = await fetchApi<ReceiptDto>("/receipts", {
-           method: "POST",
-           body: JSON.stringify({ paymentId: paymentData.id })
-         });
-         setGeneratedReceiptId(receiptData.id);
-      } catch (e) {
-         console.warn("Failed to generate receipt automatically");
-      }
+      setGeneratedReceiptId(paymentData.receipt?.id ?? null);
       
       setSubmitted(true);
     } catch (err) {
@@ -106,7 +99,7 @@ function RecordPaymentContent() {
         </p>
         <div className="flex items-center gap-3 mt-4">
            <Button variant="outline" onClick={() => { 
-               setSubmitted(false); setSelectedTenantId(null); setAmount(""); setSearch(""); 
+               setSubmitted(false); setSelectedTenantId(null); setAmount(""); setSearch(""); setReferenceNumber("");
                setGeneratedReceiptId(null); setReceiptSent(false); 
            }}>
              Record Another
@@ -278,6 +271,17 @@ function RecordPaymentContent() {
                           </button>
                         ))}
                      </div>
+                     {method !== "CASH" && (
+                       <div className="flex flex-col gap-2">
+                         <label className="text-sm font-semibold text-foreground">Reference Number</label>
+                         <Input
+                           value={referenceNumber}
+                           onChange={(e) => setReferenceNumber(e.target.value)}
+                           placeholder="UPI transaction ID or bank reference"
+                           className="h-12"
+                         />
+                       </div>
+                     )}
                   </div>
 
                   <div className="pt-6 animate-slide-up stagger-4">

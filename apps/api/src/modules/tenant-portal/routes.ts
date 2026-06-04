@@ -7,7 +7,7 @@ import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
 import { storageProvider } from "../../providers/mock-providers.js";
 import { createAuditLog } from "../common/audit.js";
-import { toMaintenanceRequestDto, toRentEntryDto } from "../common/serializers.js";
+import { toMaintenanceRequestDto, toNotificationDto, toRentEntryDto, toTenantDto } from "../common/serializers.js";
 
 const tenantMaintenanceSchema = z.object({
   category: z.enum(["PLUMBING", "ELECTRICAL", "FURNITURE", "INTERNET", "CLEANING", "OTHER"]),
@@ -17,6 +17,78 @@ const tenantMaintenanceSchema = z.object({
 });
 
 export async function tenantPortalRoutes(app: FastifyInstance) {
+  app.get("/tenant-portal/home", { preHandler: [app.authenticateTenant] }, async (request) => {
+    const tenantId = requireTenantId(request.user.tenantId);
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: {
+        room: true,
+        property: true
+      }
+    });
+
+    if (!tenant) {
+      throw new AppError(404, "TENANT_NOT_FOUND", "Tenant associated with token not found");
+    }
+
+    const [currentRent, openMaintenanceCount, unreadNotifications, recentNotifications] = await Promise.all([
+      prisma.rentEntry.findFirst({
+        where: { tenantId },
+        orderBy: { billingMonth: "desc" }
+      }),
+      prisma.maintenanceRequest.count({
+        where: {
+          tenantId,
+          status: { in: ["NEW", "IN_PROGRESS"] }
+        }
+      }),
+      prisma.notification.count({
+        where: {
+          tenantId,
+          readAt: null
+        }
+      }),
+      prisma.notification.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+        take: 5
+      })
+    ]);
+
+    return ok({
+      profile: {
+        ...toTenantDto(tenant),
+        propertyName: tenant.property.name,
+        roomNumber: tenant.room.roomNumber
+      },
+      currentRent: currentRent ? toRentEntryDto(currentRent) : null,
+      unreadNotifications,
+      openMaintenanceCount,
+      recentNotifications: recentNotifications.map(toNotificationDto)
+    });
+  });
+
+  app.get("/tenant-portal/profile", { preHandler: [app.authenticateTenant] }, async (request) => {
+    const tenantId = requireTenantId(request.user.tenantId);
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: {
+        room: true,
+        property: true
+      }
+    });
+
+    if (!tenant) {
+      throw new AppError(404, "TENANT_NOT_FOUND", "Tenant associated with token not found");
+    }
+
+    return ok({
+      ...toTenantDto(tenant),
+      propertyName: tenant.property.name,
+      roomNumber: tenant.room.roomNumber
+    });
+  });
+
   // 1. View Rent Entries
   app.get("/tenant-portal/rent", { preHandler: [app.authenticateTenant] }, async (request) => {
     const tenantId = requireTenantId(request.user.tenantId);
@@ -98,6 +170,7 @@ export async function tenantPortalRoutes(app: FastifyInstance) {
     const receipt = await prisma.receipt.findFirst({
       where: {
         id: params.id,
+        isVoided: false,
         payment: {
           rentEntry: {
             tenantId
@@ -124,6 +197,7 @@ export async function tenantPortalRoutes(app: FastifyInstance) {
 
     const receipts = await prisma.receipt.findMany({
       where: {
+        isVoided: false,
         payment: {
           rentEntry: {
             tenantId
@@ -204,6 +278,25 @@ export async function tenantPortalRoutes(app: FastifyInstance) {
   app.post("/tenant-portal/announcements/:id/read", { preHandler: [app.authenticateTenant] }, async (request, reply) => {
     const params = request.params as { id: string };
     const tenantId = requireTenantId(request.user.tenantId);
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: { room: true }
+    });
+    if (!tenant) throw new AppError(404, "NOT_FOUND", "Tenant not found");
+
+    const announcement = await prisma.announcement.findFirst({
+      where: {
+        id: params.id,
+        propertyId: tenant.propertyId,
+        OR: [
+          { targetFloor: null, targetRoomId: null },
+          { targetFloor: tenant.room.floor, targetRoomId: null },
+          { targetRoomId: tenant.roomId }
+        ]
+      }
+    });
+    if (!announcement) throw new AppError(404, "NOT_FOUND", "Announcement not found");
 
     try {
       await prisma.announcementRead.create({

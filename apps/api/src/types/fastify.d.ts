@@ -7,14 +7,14 @@ declare module "@fastify/jwt" {
     payload: {
       sub: string;
       phone: string;
-      role: "ADMIN" | "OWNER" | "TENANT";
+      role: "ADMIN" | "OWNER" | "STAFF" | "TENANT";
       ownerProfileId?: string;
       tenantId?: string;
     };
     user: {
       sub: string;
       phone: string;
-      role: "ADMIN" | "OWNER" | "TENANT";
+      role: "ADMIN" | "OWNER" | "STAFF" | "TENANT";
       ownerProfileId?: string;
       tenantId?: string;
     };
@@ -28,6 +28,7 @@ declare module "fastify" {
 
   interface FastifyInstance {
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    authenticateOwnerOrStaff: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     authenticateTenant: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     authenticateAdmin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     authenticateAny: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;

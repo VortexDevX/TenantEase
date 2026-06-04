@@ -1,114 +1,215 @@
-<div align="center">
-
 # TenantEase
 
-### PG and rental property management SaaS for owners, tenants, and admins
+TenantEase is a PG, hostel, and rental property management monorepo. It uses a Fastify API, a Next.js web app, Prisma with PostgreSQL, and a shared TypeScript contract package.
 
-<p>
-  <img src="https://img.shields.io/badge/Next.js-111827?style=for-the-badge" alt="Next.js" />
-  <img src="https://img.shields.io/badge/Fastify-111827?style=for-the-badge" alt="Fastify" />
-  <img src="https://img.shields.io/badge/Prisma-111827?style=for-the-badge" alt="Prisma" />
-  <img src="https://img.shields.io/badge/PostgreSQL-111827?style=for-the-badge" alt="PostgreSQL" />
-  <img src="https://img.shields.io/badge/pnpm-111827?style=for-the-badge" alt="pnpm" />
-  <img src="https://img.shields.io/badge/Monorepo-111827?style=for-the-badge" alt="Monorepo" />
-</p>
-<p>
-  <a href="https://github.com/VortexDevX/TenantEase"><img src="https://img.shields.io/badge/GitHub%20Repo-111827?style=for-the-badge" alt="GitHub Repo" /></a>
-</p>
+Older planning docs may mention a Next API monolith. Current code is not that architecture: API and web are separate workspace apps.
 
-</div>
+## Workspace
 
----
+```text
+.
+├─ apps/
+│  ├─ api/                 Fastify API, Prisma schema, migrations, API tests
+│  └─ web/                 Next.js app directory frontend
+├─ packages/
+│  └─ types/               Shared DTOs and API contract types
+├─ docs/                   Product and implementation planning notes
+├─ storage/                Local runtime files, such as generated receipts
+├─ docker-compose.yml      Local PostgreSQL and Redis services
+├─ package.json            Root pnpm scripts
+├─ pnpm-workspace.yaml     Workspace package list
+└─ tsconfig.base.json      Shared TypeScript config
+```
 
-## Overview
+## Main Features
 
-TenantEase is a documentation-first SaaS monorepo for property, tenant, rent, receipt, maintenance, onboarding, and admin workflows. It is still actively in progress, so the README is clear about status without forcing production polish.
+- Owner onboarding, login, and profile completion.
+- Property, room, bed, and occupancy management.
+- Tenant lifecycle workflows: create, transfer, notice, vacate, and settlement.
+- Rent ledger, payment recording, voiding, and receipt generation.
+- Property settings for rent due day, late fee rule, owner PAN, and owner contact.
+- Reminder configuration, reminder send logs, and in-app notifications.
+- Tenant portal home/profile, receipts, announcements, maintenance, and agreements.
+- Plan and billing foundation: free-plan property limit, subscription overview, plan options, and invoice records.
+- Utilities, agreements, announcements, reports, and maintenance modules.
+- Shared DTOs in `packages/types` used by both API and web.
 
-<table>
-<tr>
-<td width="25%"><strong>Status</strong></td>
-<td>In-progress SaaS architecture</td>
-</tr>
-<tr>
-<td><strong>Stack</strong></td>
-<td>pnpm workspace, Next.js web app, Fastify API, Prisma, PostgreSQL, shared TypeScript packages</td>
-</tr>
-<tr>
-<td><strong>Built for</strong></td>
-<td>PG owners, small landlords, tenants, and internal admins</td>
-</tr>
-</table>
+## Tech Stack
 
-## Highlights
+- Runtime: Node.js with pnpm through Corepack.
+- Web: Next.js, React, Tailwind CSS.
+- API: Fastify, Zod, Prisma Client, Prisma PostgreSQL adapter.
+- Database: PostgreSQL 16 through Docker Compose.
+- Cache/service placeholder: Redis through Docker Compose.
+- Tests: Vitest for API integration/unit coverage.
 
-- Monorepo structure with web, API, and shared types
-- Owner, tenant, and admin-oriented product planning
-- Prisma schema and migrations kept to formatting-only boundaries
-- Fastify/Next structure retained
-- Existing in-progress work left intact
+## Required Tools
 
-## Feature Map
+- Node.js compatible with current dependencies. The tested local runtime is Node `v24.13.0`.
+- Corepack with pnpm `10.8.0`.
+- Docker Desktop or another Docker engine for PostgreSQL and Redis.
 
-<table>
-<tr>
-<td width="50%" valign="top">
+Check local versions:
 
-### Owner Portal
+```powershell
+node --version
+corepack pnpm --version
+docker --version
+```
 
-Properties, rooms, tenants, rent, receipts, maintenance, and owner workflows.
+## Environment
 
-</td>
-<td width="50%" valign="top">
+Create a root `.env` file. Use `.env.example` as the starting point:
 
-### Tenant Portal
+```powershell
+Copy-Item .env.example .env
+```
 
-Tenant-facing views for receipts, payments, documents, and updates.
+Generate secrets:
 
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
 
-### API
+Important variables:
 
-Fastify service with Prisma-backed domain modules.
+```env
+DATABASE_URL=postgresql://postgres@127.0.0.1:55432/tenantease?schema=public
+JWT_ACCESS_SECRET=replace-with-32-char-secret
+JWT_REFRESH_SECRET=replace-with-32-char-secret
+OTP_PEPPER=replace-with-32-char-secret
+ADMIN_PHONES=
+API_PORT=4000
+API_HOST=0.0.0.0
+WEB_URL=http://localhost:3000
+STORAGE_DIR=../../storage
+NEXT_PUBLIC_API_URL=http://localhost:4000
+SMS_PROVIDER=mock
+SMS_API_KEY=
+SMS_SENDER_NAME=TenantEase
+SMS_HTTP_URL=
+SMS_HTTP_AUTH_HEADER=
+SMS_HTTP_AUTH_VALUE=
+```
 
-</td>
-<td width="50%" valign="top">
-
-### Planning Docs
-
-Detailed docs and product notes for staged SaaS implementation.
-
-</td>
-</tr>
-</table>
+Do not commit real `.env` values.
 
 ## Quick Start
 
-```bash
+```powershell
 corepack enable
 corepack pnpm install
+docker compose up -d postgres redis
+corepack pnpm prisma:generate
+corepack pnpm prisma:migrate
+corepack pnpm prisma:seed
 corepack pnpm dev
 ```
 
-## Project Structure
+Open:
 
-- apps/web/ - Next.js frontend
-- apps/api/ - Fastify API and Prisma project
-- packages/types/ - shared TypeScript contracts
-- docs/ - planning and product documentation
+- Web: `http://localhost:3000`
+- API health: `http://localhost:4000/health`
 
-## Notes
+## Common Scripts
 
-- This project is in progress by design.
-- Prisma schema and monorepo structure were not changed.
-- Do not run migrations unless explicitly needed for local development.
+```powershell
+corepack pnpm dev               # API and web together
+corepack pnpm dev:api           # Fastify only
+corepack pnpm dev:web           # Next only
+corepack pnpm prisma:generate   # Generate Prisma client
+corepack pnpm prisma:migrate    # Apply local Prisma migrations
+corepack pnpm prisma:seed       # Seed local data
+corepack pnpm db:studio         # Open Prisma Studio DB editor
+corepack pnpm test:api          # API test suite
+corepack pnpm typecheck         # TypeScript checks
+corepack pnpm build             # Production build for packages/apps
+corepack pnpm audit --prod      # Production dependency audit
+```
 
----
+## Login Behavior
 
-<div align="center">
+Local OTP is mocked by default. The login UI receives and displays the debug OTP from `/auth/send-otp` when not in production.
 
-<strong>Clean docs. Clear setup. No fake screenshots.</strong>
+- Phone in `ADMIN_PHONES`: logs in as `ADMIN`.
+- Phone attached to an active tenant: logs in as `TENANT`.
+- New phone with no existing owner/admin record: logs in as `TENANT` with no active booking.
+- To make an owner, promote the user from the admin console or seed/create an owner account.
 
-</div>
+## SMS Providers
+
+SMS defaults to `SMS_PROVIDER=mock`, which logs OTP and reminder messages locally.
+
+Available modes:
+
+- `mock`: local development, no external SMS.
+- `textbelt`: free developer testing through Textbelt. Use `SMS_API_KEY=textbelt` for the public free key or your own paid key.
+- `http`: generic JSON webhook for any gateway. Configure `SMS_HTTP_URL`, plus optional auth header/value.
+
+There is no truly free and reliable production SMS provider. For India production OTP/reminders, use a paid DLT-compliant provider such as MSG91, or a global provider such as Twilio Verify. Keep mock/Textbelt for development only.
+
+## Database Notes
+
+Local PostgreSQL runs on host port `55432`. Redis runs on host port `56379`.
+
+For a NoSQL-style browser editor over the relational DB, use Prisma Studio:
+
+```powershell
+corepack pnpm db:studio
+```
+
+It opens a local web UI where you can view and edit tables. Treat edits like direct DB writes: they bypass app validation, so prefer the app UI for normal work.
+
+## Plan Limits
+
+Every owner has a subscription row. Existing owners are backfilled to `FREE`.
+
+- `FREE`: 1 property, no staff accounts, in-app/email-capable reminders.
+- `STARTER`: 1 property, 1 staff account, SMS enabled.
+- `PRO`: 3 properties, 3 staff accounts, SMS and online payment flags enabled.
+- `BUSINESS`: high property cap, 10 staff accounts, SMS/WhatsApp/online payment flags enabled.
+
+The API currently enforces the property cap and staff-account cap, and exposes `/subscription`, `/subscription/plans`, and `/subscription/invoices`. Staff invite/revoke is available from owner UI. Razorpay upgrade/cancel/webhook flows are still pending.
+
+For a fresh database:
+
+```powershell
+docker compose down -v
+docker compose up -d postgres redis
+corepack pnpm prisma:migrate
+corepack pnpm prisma:seed
+```
+
+If Prisma reports migration drift in disposable local dev data, reset intentionally:
+
+```powershell
+corepack pnpm --filter @tenantease/api exec dotenv -e ../../.env -- prisma migrate reset
+```
+
+This drops local data. Do not run reset against data you need.
+
+## Verification
+
+Recommended checks before handing off work:
+
+```powershell
+corepack pnpm -r typecheck
+corepack pnpm --filter @tenantease/api test
+corepack pnpm -r build
+corepack pnpm audit --prod
+corepack pnpm outdated --recursive
+```
+
+API tests require PostgreSQL to be reachable at `127.0.0.1:55432` and migrated to the current Prisma schema.
+
+## Version Compatibility Notes
+
+- TypeScript `baseUrl` was removed from shared config to avoid future TypeScript 7 deprecation problems.
+- Current dependency baseline has been verified on Prisma 7.8, TypeScript 6, Vite 8, Vitest 4.1.8, Zod 4, and Fastify CORS 11.
+- Prisma datasource URL and seed command live in `apps/api/prisma.config.ts`; Prisma Client uses `@prisma/adapter-pg`.
+- Current Prisma migrations include the MVP gap closure, subscription foundation, and staff assignments. Run `corepack pnpm prisma:migrate` after pulling these changes.
+- `pnpm audit --prod` and `pnpm outdated --recursive` should be clean; pnpm may still print a Node `url.parse()` deprecation warning from its own tooling.
+
+## More Detail
+
+Use [RUN_PROJECT.md](RUN_PROJECT.md) for a step-by-step local runbook, troubleshooting, and verification flow.

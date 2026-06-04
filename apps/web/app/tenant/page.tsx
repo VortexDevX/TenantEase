@@ -6,22 +6,22 @@ import { Badge } from "@/components/ui/badge";
 import { useRequireRole, useAuth } from "@/contexts/AuthContext";
 import { useApi } from "@/lib/useApi";
 import { formatPaisa, timeAgo } from "@/lib/format";
-import { IndianRupee, Wrench, Clock, FileText, Loader2 } from "lucide-react";
-import type { RentEntryDto, MaintenanceRequestDto } from "@tenantease/types";
+import { IndianRupee, Wrench, Clock, FileText, Loader2, Home } from "lucide-react";
+import type { RentEntryDto, TenantPortalHomeDto } from "@tenantease/types";
 
 function TenantDashboardContent() {
   const { user } = useAuth();
   const tenantId = user?.tenantId;
 
+  const { data: home, loading: homeLoading } = useApi<TenantPortalHomeDto>(
+    tenantId ? "/tenant-portal/home" : null
+  );
+
   const { data: rentEntries, loading: rentLoading } = useApi<RentEntryDto[]>(
     tenantId ? "/tenant-portal/rent" : null
   );
 
-  const { data: maintenanceReqs, loading: maintLoading } = useApi<MaintenanceRequestDto[]>(
-    tenantId ? "/tenant-portal/maintenance" : null
-  );
-
-  const loading = rentLoading || maintLoading;
+  const loading = homeLoading || rentLoading;
 
   if (!user?.hasBooking) {
     return (
@@ -33,6 +33,9 @@ function TenantDashboardContent() {
         <p className="text-muted-foreground max-w-sm">
           Your account is set up, but you don't have an active rental booking yet.
           Please contact your property owner to get started.
+        </p>
+        <p className="text-xs font-medium text-muted-foreground max-w-sm">
+          If you manage properties, ask an admin to upgrade this account to owner access.
         </p>
       </div>
     );
@@ -46,21 +49,40 @@ function TenantDashboardContent() {
     );
   }
 
-  const currentRent = rentEntries?.[0];
-  const pendingMaintenance = maintenanceReqs?.filter(
-    (r) => r.status === "NEW" || r.status === "IN_PROGRESS"
-  ) ?? [];
+  const currentRent = home?.currentRent ?? rentEntries?.[0] ?? null;
 
   return (
     <div className="flex flex-col gap-8 animate-fade-in">
       <section>
         <h1 className="text-3xl font-bold tracking-tight text-foreground mb-1">
-          Welcome, {user.fullName ?? "Tenant"}
+          Welcome, {home?.profile.fullName ?? user.fullName ?? "Tenant"}
         </h1>
         <p className="text-muted-foreground font-medium">
-          Here is your rental summary.
+          {home?.profile.propertyName ? `${home.profile.propertyName} · Room ${home.profile.roomNumber}` : "Here is your rental summary."}
         </p>
       </section>
+
+      {home?.profile && (
+        <Card>
+          <CardHeader className="border-b border-border p-5">
+            <CardTitle className="flex items-center gap-2 text-lg"><Home className="h-5 w-5 text-primary" /> Profile</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 p-5 sm:grid-cols-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Phone</p>
+              <p className="mt-1 font-semibold text-foreground">{home.profile.phone}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Property</p>
+              <p className="mt-1 font-semibold text-foreground">{home.profile.propertyName}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Room</p>
+              <p className="mt-1 font-semibold text-foreground">{home.profile.roomNumber}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* KPI Cards */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -88,9 +110,9 @@ function TenantDashboardContent() {
             <div className="bg-warning/10 p-1.5 rounded-md text-warning"><Wrench size={16} /></div>
           </CardHeader>
           <CardContent className="p-4 pt-0">
-            <span className="text-3xl font-bold">{pendingMaintenance.length}</span>
+            <span className="text-3xl font-bold">{home?.openMaintenanceCount ?? 0}</span>
             <p className="text-xs text-muted-foreground font-medium mt-1">
-              {pendingMaintenance.length === 0 ? "All clear" : "awaiting resolution"}
+              {(home?.openMaintenanceCount ?? 0) === 0 ? "All clear" : "awaiting resolution"}
             </p>
           </CardContent>
         </Card>
@@ -108,6 +130,25 @@ function TenantDashboardContent() {
           </CardContent>
         </Card>
       </section>
+
+      {home?.recentNotifications && home.recentNotifications.length > 0 && (
+        <Card>
+          <CardHeader className="border-b border-border p-5">
+            <CardTitle className="text-lg">Recent Notices</CardTitle>
+          </CardHeader>
+          <div className="p-0">
+            {home.recentNotifications.map((notice) => (
+              <div key={notice.id} className="border-b border-border p-4 last:border-0">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-semibold text-foreground">{notice.title}</p>
+                  {!notice.readAt && <Badge variant="warning">New</Badge>}
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">{notice.content}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Rent History */}
       <Card>

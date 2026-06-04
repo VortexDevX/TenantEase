@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Users, LogOut, Settings } from "lucide-react";
+import { clearAuthTokens } from "@/lib/api-client";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -16,10 +17,10 @@ const adminNavItems = [
 
 export function AdminLayout({ children, activePath }: AdminLayoutProps) {
   return (
-    <div className="min-h-screen bg-background pb-20 md:pb-0 md:pl-64 flex flex-col relative w-full">
+    <div className="min-h-screen bg-background pb-20 md:pb-0 md:pl-72 flex flex-col relative w-full">
 
       {/* Desktop Sidebar */}
-      <aside className="fixed left-0 top-0 bottom-0 w-64 bg-card border-r border-border hidden md:flex flex-col gap-6 p-6 z-40">
+      <aside className="fixed left-0 top-0 bottom-0 w-72 bg-card/95 border-r border-border hidden md:flex flex-col gap-6 p-6 z-40 shadow-[8px_0_32px_rgba(15,23,42,0.04)]">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-destructive text-destructive-foreground flex justify-center items-center font-bold text-xl shadow-soft">
             A
@@ -54,7 +55,7 @@ export function AdminLayout({ children, activePath }: AdminLayoutProps) {
         <div className="mt-auto flex flex-col gap-3">
           <button
             onClick={() => {
-              localStorage.removeItem("te_access_token");
+              clearAuthTokens();
               window.location.href = "/login";
             }}
             className="flex items-center justify-center gap-2 p-3 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors border border-transparent hover:border-destructive/20 font-medium w-full text-sm"
@@ -66,7 +67,7 @@ export function AdminLayout({ children, activePath }: AdminLayoutProps) {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 w-full max-w-5xl mx-auto p-4 md:p-8 animate-fade-in relative">
+      <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 lg:p-10 animate-fade-in relative">
         <header className="flex md:hidden items-center justify-between py-2 mb-6">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-md bg-destructive text-destructive-foreground flex justify-center items-center font-bold shadow-soft">
@@ -88,7 +89,7 @@ export function AdminLayout({ children, activePath }: AdminLayoutProps) {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center justify-center gap-1 w-16 h-14 rounded-xl transition-all ${
+              className={`flex flex-col items-center justify-center gap-1 min-w-24 h-14 rounded-xl transition-all ${
                 isActive
                   ? "text-destructive font-semibold"
                   : "text-muted-foreground font-medium"

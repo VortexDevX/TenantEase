@@ -9,11 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsTrigger } from "@/components/ui/tabs";
 import { useProperty } from "@/lib/PropertyContext";
 import { useApi } from "@/lib/useApi";
+import { fetchApi, fetchApiBlob } from "@/lib/api-client";
 import { formatPaisa } from "@/lib/format";
 import { AddTenantModal } from "@/components/tenants/AddTenantModal";
 import { CsvImportModal } from "@/components/tenants/CsvImportModal";
-import { Search, Plus, PhoneCall, IndianRupee, MoreVertical, Loader2, UploadCloud } from "lucide-react";
-import type { TenantDto, TenantStatus } from "@tenantease/types";
+import { Search, Plus, PhoneCall, IndianRupee, MoreVertical, Loader2, UploadCloud, ArrowRightLeft, DoorOpen, FileText, Trash2, X } from "lucide-react";
+import type { RoomDto, TenantDocumentDto, TenantDto, TenantStatus } from "@tenantease/types";
 import Link from "next/link";
 
 function getInitials(name: string): string {
@@ -30,9 +31,17 @@ function TenantListContent() {
   const propertyId = activeProperty?.id;
   const [showModal, setShowModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
+  const [documentError, setDocumentError] = useState("");
+  const [documentSuccess, setDocumentSuccess] = useState("");
+  const [uploadingDocument, setUploadingDocument] = useState(false);
 
   const { data: tenants, loading, refetch } = useApi<TenantDto[]>(
     propertyId ? `/properties/${propertyId}/tenants?limit=100` : null
+  );
+  const { data: rooms } = useApi<RoomDto[]>(propertyId ? `/properties/${propertyId}/rooms` : null);
+  const { data: documents, loading: documentsLoading, refetch: refetchDocuments } = useApi<TenantDocumentDto[]>(
+    selectedTenantId ? `/tenants/${selectedTenantId}/documents` : null
   );
 
   const [search, setSearch] = useState("");
@@ -69,6 +78,86 @@ function TenantListContent() {
   };
 
   const isLoading = propLoading || loading;
+
+  async function transferTenant(tenant: TenantDto) {
+    const roomNumber = window.prompt("Move tenant to room number:");
+    if (!roomNumber) return;
+    const room = rooms?.find((item) => item.roomNumber.toLowerCase() === roomNumber.toLowerCase());
+    if (!room) {
+      alert("Room not found.");
+      return;
+    }
+    const rentText = window.prompt("New monthly rent in rupees. Leave blank to keep current rent:");
+    await fetchApi(`/tenants/${tenant.id}/transfer`, {
+      method: "POST",
+      body: JSON.stringify({
+        roomId: room.id,
+        monthlyRent: rentText ? Math.round(Number(rentText) * 100) : undefined,
+        effectiveDate: new Date().toISOString(),
+      }),
+    });
+    refetch();
+  }
+
+  async function vacateTenant(tenant: TenantDto) {
+    if (!confirm(`Mark ${tenant.fullName} as vacated?`)) return;
+    const damageText = window.prompt("Damage deduction in rupees:", "0");
+    await fetchApi(`/tenants/${tenant.id}/vacate`, {
+      method: "POST",
+      body: JSON.stringify({
+        vacatedAt: new Date().toISOString(),
+        damageDeduction: Math.round(Number(damageText || 0) * 100),
+        refundStatus: "pending",
+      }),
+    });
+    refetch();
+  }
+
+  async function uploadTenantDocument(tenantId: string, file: File | null) {
+    if (!file) return;
+    setDocumentError("");
+    setDocumentSuccess("");
+    setUploadingDocument(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      await fetchApi(`/tenants/${tenantId}/documents/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      setDocumentSuccess("Document uploaded.");
+      refetchDocuments();
+    } catch (error) {
+      setDocumentError(error instanceof Error ? error.message : "Document upload failed.");
+    } finally {
+      setUploadingDocument(false);
+    }
+  }
+
+  async function downloadTenantDocument(document: TenantDocumentDto) {
+    setDocumentError("");
+    try {
+      const blob = await fetchApiBlob(document.url);
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    } catch (error) {
+      setDocumentError(error instanceof Error ? error.message : "Document download failed.");
+    }
+  }
+
+  async function deleteTenantDocument(tenantId: string, document: TenantDocumentDto) {
+    if (!confirm(`Delete ${document.fileName}?`)) return;
+    setDocumentError("");
+    setDocumentSuccess("");
+    try {
+      await fetchApi(`/tenants/${tenantId}/documents/${document.id}`, { method: "DELETE" });
+      setDocumentSuccess("Document deleted.");
+      refetchDocuments();
+    } catch (error) {
+      setDocumentError(error instanceof Error ? error.message : "Document delete failed.");
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
@@ -172,14 +261,101 @@ function TenantListContent() {
                    </div>
                    
                    {/* Actions Footer */}
-                   <div className="grid grid-cols-2 border-t border-border bg-secondary/30">
+                   <div className="grid grid-cols-5 border-t border-border bg-secondary/30">
                       <a href={`tel:${t.phone}`} className="flex items-center justify-center gap-2 py-3 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors border-r border-border">
                         <PhoneCall size={16} /> Call
                       </a>
-                      <Link href={`/payments/new?tenantId=${t.id}`} className="flex items-center justify-center gap-2 py-3 text-sm font-semibold text-primary-strong hover:bg-primary/5 transition-colors">
-                        <IndianRupee size={16} /> Record Rent
+                      <Link href={`/payments/new?tenantId=${t.id}`} className="flex items-center justify-center gap-2 py-3 text-sm font-semibold text-primary-strong hover:bg-primary/5 transition-colors border-r border-border">
+                        <IndianRupee size={16} /> Rent
                       </Link>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTenantId(selectedTenantId === t.id ? null : t.id);
+                          setDocumentError("");
+                          setDocumentSuccess("");
+                        }}
+                        className="flex items-center justify-center gap-2 py-3 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors border-r border-border"
+                      >
+                        <FileText size={16} /> KYC
+                      </button>
+                      <button type="button" onClick={() => transferTenant(t)} disabled={t.status === "VACATED"} className="flex items-center justify-center gap-2 py-3 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors border-r border-border disabled:opacity-40">
+                        <ArrowRightLeft size={16} /> Move
+                      </button>
+                      <button type="button" onClick={() => vacateTenant(t)} disabled={t.status === "VACATED"} className="flex items-center justify-center gap-2 py-3 text-sm font-semibold text-destructive hover:bg-destructive/5 transition-colors border-l border-border disabled:opacity-40">
+                        <DoorOpen size={16} /> Vacate
+                      </button>
                    </div>
+                   {selectedTenantId === t.id && (
+                    <div className="border-t border-border bg-card p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-bold text-foreground">KYC documents</p>
+                          <p className="mt-1 text-xs font-medium text-muted-foreground">Upload PDF, JPEG, or PNG files.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTenantId(null)}
+                          className="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                          aria-label="Close KYC panel"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+
+                      {(documentError || documentSuccess) && (
+                        <div className={`mt-3 rounded-lg border px-3 py-2 text-xs font-semibold ${documentError ? "border-destructive/20 bg-destructive/10 text-destructive" : "border-success/20 bg-success/10 text-success"}`}>
+                          {documentError || documentSuccess}
+                        </div>
+                      )}
+
+                      <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-secondary/30 px-3 py-3 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground">
+                        {uploadingDocument ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}
+                        {uploadingDocument ? "Uploading..." : "Upload document"}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,application/pdf"
+                          className="sr-only"
+                          disabled={uploadingDocument}
+                          onChange={(event) => {
+                            void uploadTenantDocument(t.id, event.target.files?.[0] ?? null);
+                            event.target.value = "";
+                          }}
+                        />
+                      </label>
+
+                      <div className="mt-3 flex flex-col gap-2">
+                        {documentsLoading ? (
+                          <div className="flex h-16 items-center justify-center">
+                            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                          </div>
+                        ) : documents && documents.length > 0 ? (
+                          documents.map((document) => (
+                            <div key={document.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-secondary/20 p-3">
+                              <button
+                                type="button"
+                                onClick={() => downloadTenantDocument(document)}
+                                className="min-w-0 text-left"
+                              >
+                                <p className="truncate text-sm font-semibold text-foreground">{document.fileName}</p>
+                                <p className="mt-0.5 text-xs font-medium text-muted-foreground">{new Date(document.createdAt).toLocaleDateString()}</p>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteTenantDocument(t.id, document)}
+                                className="rounded-md p-2 text-destructive hover:bg-destructive/10"
+                                aria-label={`Delete ${document.fileName}`}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="rounded-lg bg-secondary/20 px-3 py-4 text-center text-xs font-medium text-muted-foreground">No documents uploaded yet.</p>
+                        )}
+                      </div>
+                    </div>
+                   )}
                 </CardContent>
              </Card>
            ))}

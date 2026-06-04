@@ -23,6 +23,7 @@ export async function generateMonthlyRentEntries(propertyId: string, ownerProfil
   const property = await prisma.property.findFirst({
     where: { id: propertyId, ownerProfileId },
     include: {
+      settings: true,
       tenants: {
         where: { status: { in: ["ACTIVE", "NOTICE"] } }
       }
@@ -35,7 +36,11 @@ export async function generateMonthlyRentEntries(propertyId: string, ownerProfil
 
   const now = new Date();
   const targetMonth = month ?? monthKey(now);
-  const dueDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 5));
+  const [yearText, monthText] = targetMonth.split("-");
+  const targetYear = Number(yearText);
+  const targetMonthIndex = Number(monthText) - 1;
+  const dueDay = property.settings?.rentDueDay ?? 5;
+  const dueDate = new Date(Date.UTC(targetYear, targetMonthIndex, dueDay));
 
   for (const tenant of property.tenants) {
     await prisma.rentEntry.upsert({
@@ -85,4 +90,3 @@ export async function recalculateRentEntry(rentEntryId: string) {
     }
   });
 }
-

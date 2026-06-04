@@ -1,25 +1,23 @@
 import type { FastifyInstance } from "fastify";
-import { requireOwnerProfileId } from "../../lib/auth-guards.js";
+import { assertPropertyAccess, assertTenantAccess } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
 import { createAuditLog } from "../common/audit.js";
-import { assertPropertyOwnership } from "../common/owner.js";
 import {
   paginationSchema,
   tenantInputSchema,
   transferInputSchema,
   vacateInputSchema
 } from "../common/schemas.js";
-import { toTenantDto } from "../common/serializers.js";
+import { toRoomTransferRecordDto, toTenantDto, toVacateRecordDto } from "../common/serializers.js";
 import { assertRoomAvailability, recalculateRoom } from "./service.js";
 
 export async function tenantRoutes(app: FastifyInstance) {
-  app.get("/properties/:propertyId/tenants", { preHandler: [app.authenticate] }, async (request) => {
+  app.get("/properties/:propertyId/tenants", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const params = request.params as { propertyId: string };
     const query = paginationSchema.parse(request.query);
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
-    await assertPropertyOwnership(params.propertyId, ownerProfileId);
+    await assertPropertyAccess(request, params.propertyId, "tenant:read");
 
     const where = {
       propertyId: params.propertyId,
@@ -56,11 +54,10 @@ export async function tenantRoutes(app: FastifyInstance) {
     );
   });
 
-  app.post("/properties/:propertyId/tenants", { preHandler: [app.authenticate] }, async (request) => {
+  app.post("/properties/:propertyId/tenants", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const params = request.params as { propertyId: string };
     const body = tenantInputSchema.parse({ ...(request.body as object), propertyId: params.propertyId });
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
-    await assertPropertyOwnership(params.propertyId, ownerProfileId);
+    const { ownerProfileId } = await assertPropertyAccess(request, params.propertyId, "tenant:write");
     await assertRoomAvailability(body.roomId, ownerProfileId);
 
     const tenant = await prisma.tenant.create({
@@ -83,9 +80,9 @@ export async function tenantRoutes(app: FastifyInstance) {
     return ok(toTenantDto(tenant));
   });
 
-  app.get("/tenants/:id", { preHandler: [app.authenticate] }, async (request) => {
+  app.get("/tenants/:id", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const params = request.params as { id: string };
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    const { ownerProfileId } = await assertTenantAccess(request, params.id, "tenant:read");
     const tenant = await prisma.tenant.findFirst({
       where: {
         id: params.id,
@@ -100,10 +97,10 @@ export async function tenantRoutes(app: FastifyInstance) {
     return ok(toTenantDto(tenant));
   });
 
-  app.put("/tenants/:id", { preHandler: [app.authenticate] }, async (request) => {
+  app.put("/tenants/:id", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const params = request.params as { id: string };
     const body = tenantInputSchema.partial().parse(request.body);
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    const { ownerProfileId } = await assertTenantAccess(request, params.id, "tenant:write");
     const existing = await prisma.tenant.findFirst({
       where: {
         id: params.id,
@@ -138,10 +135,10 @@ export async function tenantRoutes(app: FastifyInstance) {
     return ok(toTenantDto(tenant));
   });
 
-  app.post("/tenants/:id/vacate", { preHandler: [app.authenticate] }, async (request) => {
+  app.post("/tenants/:id/vacate", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const params = request.params as { id: string };
     const body = vacateInputSchema.parse(request.body);
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    const { ownerProfileId } = await assertTenantAccess(request, params.id, "tenant:write");
     const tenant = await prisma.tenant.findFirst({
       where: {
         id: params.id,
@@ -157,12 +154,44 @@ export async function tenantRoutes(app: FastifyInstance) {
       throw new AppError(422, "TENANT_ALREADY_VACATED", "Tenant already vacated");
     }
 
-    const updated = await prisma.tenant.update({
-      where: { id: tenant.id },
-      data: {
-        status: "VACATED",
-        vacatedAt: new Date(body.vacatedAt)
+    const pending = await prisma.rentEntry.aggregate({
+      where: {
+        tenantId: tenant.id,
+        status: { in: ["UNPAID", "PARTIAL", "OVERDUE"] }
+      },
+      _sum: {
+        amountDue: true,
+        amountPaid: true
       }
+    });
+    const pendingRent = Math.max(0, (pending._sum.amountDue ?? 0) - (pending._sum.amountPaid ?? 0));
+    const refundAmount = Math.max(0, tenant.depositPaid - body.damageDeduction - pendingRent);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedTenant = await tx.tenant.update({
+        where: { id: tenant.id },
+        data: {
+          status: "VACATED",
+          vacatedAt: new Date(body.vacatedAt)
+        }
+      });
+
+      const vacateRecord = await tx.vacateRecord.create({
+        data: {
+          tenantId: tenant.id,
+          propertyId: tenant.propertyId,
+          roomId: tenant.roomId,
+          vacatedAt: new Date(body.vacatedAt),
+          depositPaid: tenant.depositPaid,
+          damageDeduction: body.damageDeduction,
+          pendingRent,
+          refundAmount,
+          refundStatus: body.refundStatus,
+          finalNotes: body.finalNotes ?? null
+        }
+      });
+
+      return { updatedTenant, vacateRecord };
     });
 
     await recalculateRoom(tenant.roomId);
@@ -170,18 +199,21 @@ export async function tenantRoutes(app: FastifyInstance) {
       userId: request.user.sub,
       action: "tenant.vacate",
       resource: "Tenant",
-      resourceId: updated.id,
-      payload: body,
+      resourceId: result.updatedTenant.id,
+      payload: { ...body, pendingRent, refundAmount },
       ipAddress: request.ip,
       userAgent: request.headers["user-agent"]?.toString()
     });
-    return ok(toTenantDto(updated));
+    return ok({
+      tenant: toTenantDto(result.updatedTenant),
+      vacateRecord: toVacateRecordDto(result.vacateRecord)
+    });
   });
 
-  app.post("/tenants/:id/transfer", { preHandler: [app.authenticate] }, async (request) => {
+  app.post("/tenants/:id/transfer", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const params = request.params as { id: string };
     const body = transferInputSchema.parse(request.body);
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    const { ownerProfileId } = await assertTenantAccess(request, params.id, "tenant:write");
     const tenant = await prisma.tenant.findFirst({
       where: {
         id: params.id,
@@ -199,9 +231,30 @@ export async function tenantRoutes(app: FastifyInstance) {
 
     await assertRoomAvailability(body.roomId, ownerProfileId);
 
-    const updated = await prisma.tenant.update({
-      where: { id: tenant.id },
-      data: { roomId: body.roomId }
+    const effectiveDate = body.effectiveDate ? new Date(body.effectiveDate) : new Date();
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedTenant = await tx.tenant.update({
+        where: { id: tenant.id },
+        data: {
+          roomId: body.roomId,
+          monthlyRent: body.monthlyRent ?? tenant.monthlyRent
+        }
+      });
+
+      const transferRecord = await tx.roomTransferRecord.create({
+        data: {
+          tenantId: tenant.id,
+          propertyId: tenant.propertyId,
+          fromRoomId: tenant.roomId,
+          toRoomId: body.roomId,
+          effectiveDate,
+          monthlyRentBefore: tenant.monthlyRent,
+          monthlyRentAfter: body.monthlyRent ?? null,
+          note: body.note ?? null
+        }
+      });
+
+      return { updatedTenant, transferRecord };
     });
 
     await Promise.all([recalculateRoom(tenant.roomId), recalculateRoom(body.roomId)]);
@@ -209,11 +262,14 @@ export async function tenantRoutes(app: FastifyInstance) {
       userId: request.user.sub,
       action: "tenant.transfer",
       resource: "Tenant",
-      resourceId: updated.id,
-      payload: { fromRoomId: tenant.roomId, toRoomId: body.roomId },
+      resourceId: result.updatedTenant.id,
+      payload: { fromRoomId: tenant.roomId, toRoomId: body.roomId, effectiveDate, monthlyRent: body.monthlyRent },
       ipAddress: request.ip,
       userAgent: request.headers["user-agent"]?.toString()
     });
-    return ok(toTenantDto(updated));
+    return ok({
+      tenant: toTenantDto(result.updatedTenant),
+      transferRecord: toRoomTransferRecordDto(result.transferRecord)
+    });
   });
 }

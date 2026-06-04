@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { requireOwnerProfileId } from "../../lib/auth-guards.js";
+import { assertPaymentAccess, assertReceiptAccess, assertTenantAccess } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
@@ -9,12 +9,13 @@ import { toReceiptDto } from "../common/serializers.js";
 import { generateReceipt } from "./service.js";
 
 export async function receiptRoutes(app: FastifyInstance) {
-  app.post("/receipts", { preHandler: [app.authenticate] }, async (request) => {
+  app.post("/receipts", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const body = request.body as { paymentId?: string };
     if (!body.paymentId) {
       throw new AppError(400, "VALIDATION_ERROR", "paymentId is required");
     }
-    const receipt = await generateReceipt(body.paymentId, requireOwnerProfileId(request.user.ownerProfileId));
+    const { ownerProfileId } = await assertPaymentAccess(request, body.paymentId, "receipt:write");
+    const receipt = await generateReceipt(body.paymentId, ownerProfileId);
     await createAuditLog({
       userId: request.user.sub,
       action: "receipt.generate",
@@ -27,12 +28,13 @@ export async function receiptRoutes(app: FastifyInstance) {
     return ok(toReceiptDto(receipt));
   });
 
-  app.get("/receipts/:id/download", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get("/receipts/:id/download", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const params = request.params as { id: string };
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    const { ownerProfileId } = await assertReceiptAccess(request, params.id, "receipt:read");
     const receipt = await prisma.receipt.findFirst({
       where: {
         id: params.id,
+        isVoided: false,
         payment: {
           rentEntry: {
             tenant: {
@@ -55,11 +57,12 @@ export async function receiptRoutes(app: FastifyInstance) {
     return reply.send(buffer);
   });
 
-  app.get("/tenants/:tenantId/receipts", { preHandler: [app.authenticate] }, async (request) => {
+  app.get("/tenants/:tenantId/receipts", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const params = request.params as { tenantId: string };
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    const { ownerProfileId } = await assertTenantAccess(request, params.tenantId, "receipt:read");
     const receipts = await prisma.receipt.findMany({
       where: {
+        isVoided: false,
         payment: {
           rentEntry: {
             tenantId: params.tenantId,
@@ -75,14 +78,15 @@ export async function receiptRoutes(app: FastifyInstance) {
     return ok(receipts.map(toReceiptDto));
   });
 
-  app.post("/receipts/:id/send", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.post("/receipts/:id/send", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const params = request.params as { id: string };
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    const { ownerProfileId } = await assertReceiptAccess(request, params.id, "receipt:write");
     
     // Ensure the receipt exists and belongs to the owner's property
     const receipt = await prisma.receipt.findFirst({
       where: {
         id: params.id,
+        isVoided: false,
         payment: {
           rentEntry: {
             tenant: {

@@ -74,12 +74,54 @@
     letter-spacing: 0;
   }
 
-  .scrollbar-none {
-    scrollbar-width: none;
+  @supports (scrollbar-width: none) {
+    .scrollbar-none {
+      scrollbar-width: none;
+    }
   }
 
   .scrollbar-none::-webkit-scrollbar {
     display: none;
+  }
+
+  .progress-meter {
+    appearance: none;
+    border: 0;
+    border-radius: 9999px;
+    overflow: hidden;
+    background: hsl(var(--border));
+  }
+
+  .progress-meter::-webkit-progress-bar {
+    background: hsl(var(--border));
+    border-radius: 9999px;
+  }
+
+  .progress-meter::-webkit-progress-value {
+    background: hsl(var(--primary));
+    border-radius: 9999px;
+    transition: width 500ms;
+  }
+
+  .progress-meter::-moz-progress-bar {
+    background: hsl(var(--primary));
+    border-radius: 9999px;
+  }
+
+  .progress-meter-primary {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  .progress-meter-primary::-webkit-progress-bar {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  .progress-meter-primary::-webkit-progress-value {
+    background: hsl(var(--primary-foreground));
+  }
+
+  .progress-meter-primary::-moz-progress-bar {
+    background: hsl(var(--primary-foreground));
   }
 }
 

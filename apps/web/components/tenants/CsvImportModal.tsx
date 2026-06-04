@@ -90,7 +90,12 @@ export function CsvImportModal({ propertyId, onClose, onSuccess }: Props) {
            <h2 className="font-bold text-lg text-foreground tracking-tight">Import Tenants from CSV</h2>
            <p className="text-sm text-muted-foreground">Bulk add multiple tenants by uploading a filled CSV file.</p>
           </div>
-          <button onClick={onClose} className="p-1.5 text-muted-foreground hover:bg-background rounded-full transition-colors">
+          <button
+            onClick={onClose}
+            className="p-1.5 text-muted-foreground hover:bg-background rounded-full transition-colors"
+            aria-label="Close CSV import"
+            title="Close CSV import"
+          >
             <X size={18} />
           </button>
         </div>
@@ -127,6 +132,8 @@ export function CsvImportModal({ propertyId, onClose, onSuccess }: Props) {
                   <input 
                     type="file" 
                     accept=".csv"
+                    aria-label="Upload tenant CSV file"
+                    title="Upload tenant CSV file"
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     onChange={(e) => setFile(e.target.files?.[0] || null)}
                   />

@@ -1,13 +1,12 @@
 import type { FastifyInstance } from "fastify";
-import { requireOwnerProfileId } from "../../lib/auth-guards.js";
+import { assertPropertyAccess } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { ok } from "../../lib/http.js";
-import { assertPropertyOwnership } from "../common/owner.js";
 
 export async function dashboardRoutes(app: FastifyInstance) {
-  app.get("/properties/:propertyId/dashboard", { preHandler: [app.authenticate] }, async (request) => {
+  app.get("/properties/:propertyId/dashboard", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const params = request.params as { propertyId: string };
-    await assertPropertyOwnership(params.propertyId, requireOwnerProfileId(request.user.ownerProfileId));
+    await assertPropertyAccess(request, params.propertyId, "report:read");
 
     // 1. Occupancy Stats
     const property = await prisma.property.findUnique({

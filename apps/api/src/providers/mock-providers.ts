@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { env } from "../lib/env.js";
+import { smsProvider } from "./sms-provider.js";
 
 export type SentOtp = {
   phone: string;
@@ -21,7 +22,7 @@ class MockOtpProvider {
 
 class MockNotificationProvider {
   async sendSms(phone: string, message: string) {
-    console.info(`[mock-sms] To ${maskPhone(phone)} length=${message.length}`);
+    await smsProvider.sendSms(phone, message);
   }
 
   async sendWhatsApp(phone: string, message: string) {

@@ -2,9 +2,11 @@ import { prisma } from "../../lib/db.js";
 import { env } from "../../lib/env.js";
 import { AppError } from "../../lib/errors.js";
 import { createOtpCode, createToken, hashValue } from "../../lib/security.js";
-import { mockOtpProvider } from "../../providers/mock-providers.js";
+import { smsProvider } from "../../providers/sms-provider.js";
 
 const OTP_TTL_MS = 5 * 60 * 1000;
+const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
+const OTP_HOURLY_LIMIT = 3;
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const adminPhones = new Set(
   (env.ADMIN_PHONES ?? "")
@@ -18,6 +20,30 @@ export async function sendOtp(phone: string) {
   if (user?.isBlocked) {
     throw new AppError(403, "AUTH_FORBIDDEN", "This account is blocked");
   }
+
+  const since = new Date(Date.now() - 60 * 60 * 1000);
+  const recentChallenges = await prisma.otpChallenge.findMany({
+    where: {
+      phone,
+      createdAt: { gte: since }
+    },
+    orderBy: { createdAt: "desc" },
+    take: OTP_HOURLY_LIMIT
+  });
+
+  if (recentChallenges[0] && Date.now() - recentChallenges[0].createdAt.getTime() < OTP_RESEND_COOLDOWN_MS) {
+    throw new AppError(429, "RATE_LIMITED", "Wait before requesting another OTP", {
+      retryAfterSeconds: Math.ceil((OTP_RESEND_COOLDOWN_MS - (Date.now() - recentChallenges[0].createdAt.getTime())) / 1000)
+    });
+  }
+
+  if (recentChallenges.length >= OTP_HOURLY_LIMIT) {
+    throw new AppError(429, "RATE_LIMITED", "Too many OTP requests. Try again later.", {
+      limit: OTP_HOURLY_LIMIT,
+      windowSeconds: 3600
+    });
+  }
+
   const otpCode = createOtpCode();
   const challenge = await prisma.otpChallenge.create({
     data: {
@@ -28,7 +54,7 @@ export async function sendOtp(phone: string) {
     }
   });
 
-  await mockOtpProvider.send(phone, otpCode, challenge.id);
+  await smsProvider.sendOtp(phone, otpCode, challenge.id);
 
   return {
     challengeId: challenge.id,
@@ -43,8 +69,9 @@ export async function sendOtp(phone: string) {
  * Role resolution order:
  *   1. user.role === ADMIN (set manually in DB) → ADMIN
  *   2. user has OwnerProfile → OWNER
- *   3. Tenant record exists for phone → TENANT
- *   4. New user (no records) → TENANT (default)
+ *   3. Active staff assignment exists → STAFF
+ *   4. Tenant record exists for phone → TENANT
+ *   5. New user (no records) → TENANT (default)
  */
 export async function verifyOtp(phone: string, otp: string, challengeId: string) {
   const challenge = await prisma.otpChallenge.findFirst({
@@ -98,22 +125,11 @@ export async function verifyOtp(phone: string, otp: string, challengeId: string)
           },
           include: { ownerProfile: true }
         });
-      } else if (activeTenant) {
-        user = await tx.user.create({
-          data: {
-            phone,
-            role: "TENANT"
-          },
-          include: { ownerProfile: true }
-        });
       } else {
         user = await tx.user.create({
           data: {
             phone,
-            role: "OWNER",
-            ownerProfile: {
-              create: {}
-            }
+            role: "TENANT"
           },
           include: { ownerProfile: true }
         });
@@ -145,7 +161,30 @@ export async function verifyOtp(phone: string, otp: string, challengeId: string)
     });
 
     // --- Role resolution ---
-    let resolvedRole: "ADMIN" | "OWNER" | "TENANT" = "TENANT";
+    const activeStaffAssignment = await tx.staffAssignment.findFirst({
+      where: {
+        userId: user.id,
+        isActive: true,
+        inviteStatus: { not: "REVOKED" }
+      },
+      orderBy: { invitedAt: "desc" }
+    });
+
+    if (activeStaffAssignment?.inviteStatus === "PENDING") {
+      await tx.staffAssignment.updateMany({
+        where: {
+          userId: user.id,
+          isActive: true,
+          inviteStatus: "PENDING"
+        },
+        data: {
+          inviteStatus: "ACCEPTED",
+          acceptedAt: new Date()
+        }
+      });
+    }
+
+    let resolvedRole: "ADMIN" | "OWNER" | "STAFF" | "TENANT" = "TENANT";
     let ownerProfileId: string | undefined;
     let tenantId: string | undefined;
 
@@ -154,6 +193,8 @@ export async function verifyOtp(phone: string, otp: string, challengeId: string)
     } else if (user.ownerProfile) {
       resolvedRole = "OWNER";
       ownerProfileId = user.ownerProfile.id;
+    } else if (activeStaffAssignment) {
+      resolvedRole = "STAFF";
     } else {
       resolvedRole = "TENANT";
       tenantId = activeTenant?.id;
@@ -225,7 +266,16 @@ export async function rotateRefreshToken(rawToken: string) {
   ]);
 
   // Resolve role for token re-signing
-  let resolvedRole: "ADMIN" | "OWNER" | "TENANT" = "TENANT";
+  const activeStaffAssignment = await prisma.staffAssignment.findFirst({
+    where: {
+      userId: existing.user.id,
+      isActive: true,
+      inviteStatus: { not: "REVOKED" }
+    },
+    orderBy: { invitedAt: "desc" }
+  });
+
+  let resolvedRole: "ADMIN" | "OWNER" | "STAFF" | "TENANT" = "TENANT";
   let ownerProfileId: string | undefined;
   let tenantId: string | undefined;
 
@@ -234,6 +284,8 @@ export async function rotateRefreshToken(rawToken: string) {
   } else if (existing.user.ownerProfile) {
     resolvedRole = "OWNER";
     ownerProfileId = existing.user.ownerProfile.id;
+  } else if (activeStaffAssignment) {
+    resolvedRole = "STAFF";
   } else {
     const tenant = await prisma.tenant.findFirst({
       where: { phone: existing.user.phone, status: { in: ["ACTIVE", "NOTICE"] } },

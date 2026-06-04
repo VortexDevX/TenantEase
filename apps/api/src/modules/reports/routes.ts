@@ -1,5 +1,5 @@
 import { FastifyInstance } from "fastify";
-import { requireOwnerProfileId } from "../../lib/auth-guards.js";
+import { assertPropertyAccess, requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
@@ -9,10 +9,10 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   // ─── GET /properties/:propertyId/reports/monthly ───
   // Monthly financial report with income, payments breakdown, occupancy, P&L
-  app.get("/properties/:propertyId/reports/monthly", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get("/properties/:propertyId/reports/monthly", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
     const query = request.query as Record<string, string>;
-    await assertPropertyOwnership(propertyId, requireOwnerProfileId(request.user.ownerProfileId));
+    await assertPropertyAccess(request, propertyId, "report:read");
 
     const now = new Date();
     const month = query.month ? parseInt(query.month, 10) : now.getMonth() + 1;
@@ -92,10 +92,10 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   // ─── POST /properties/:propertyId/receipts/bulk ───
   // Generate receipts for all paid entries that don't have receipts yet
-  app.post("/properties/:propertyId/receipts/bulk", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.post("/properties/:propertyId/receipts/bulk", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
     const query = request.query as Record<string, string>;
-    await assertPropertyOwnership(propertyId, requireOwnerProfileId(request.user.ownerProfileId));
+    await assertPropertyAccess(request, propertyId, "receipt:write");
 
     const now = new Date();
     const month = query.month ? parseInt(query.month, 10) : now.getMonth() + 1;
@@ -113,7 +113,9 @@ export async function reportsRoutes(app: FastifyInstance) {
       where: {
         rentEntry: { tenantId: { in: tenantIds }, billingMonth },
         isVoided: false,
-        receipt: null,
+        receipts: {
+          none: { isVoided: false }
+        },
       },
       include: { rentEntry: { include: { tenant: true } } },
     });
@@ -147,10 +149,10 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   // ─── GET /properties/:propertyId/receipts/annual ───
   // Annual receipt summary for FY (April-March)
-  app.get("/properties/:propertyId/receipts/annual", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get("/properties/:propertyId/receipts/annual", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
     const query = request.query as Record<string, string>;
-    await assertPropertyOwnership(propertyId, requireOwnerProfileId(request.user.ownerProfileId));
+    await assertPropertyAccess(request, propertyId, "receipt:read");
 
     const fy = query.fy ? parseInt(query.fy, 10) : (new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1);
     // FY = April <fy> to March <fy+1>

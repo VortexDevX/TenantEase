@@ -1,27 +1,49 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import {
+  Activity,
+  AlertTriangle,
+  Ban,
+  BriefcaseBusiness,
+  CheckCircle2,
+  Clock,
+  Database,
+  Loader2,
+  Lock,
+  RefreshCw,
+  Search,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Trash2,
+  User,
+  UserCog,
+  Users,
+} from "lucide-react";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { useRequireRole } from "@/contexts/AuthContext";
 import { useApi } from "@/lib/useApi";
-import { fetchApi } from "@/lib/api-client";
+import { ApiError, fetchApi } from "@/lib/api-client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, ShieldAlert, UserCog, User, ShieldCheck, Search, Shield, BriefcaseBusiness, Home } from "lucide-react";
 
 type AdminUser = {
   id: string;
   phone: string;
-  role: "ADMIN" | "OWNER" | "TENANT";
+  role: "ADMIN" | "OWNER" | "STAFF" | "TENANT";
   isBlocked: boolean;
   blockedAt: string | null;
   createdAt: string;
+  tenantRecordCount: number;
+  staffAssignmentCount: number;
   ownerProfile: {
     id: string;
     displayName: string | null;
     companyName: string | null;
+    propertyCount: number;
   } | null;
 };
 
@@ -30,259 +52,577 @@ type AdminUsersResponse = {
   total: number;
   limit: number;
   offset: number;
+  summary: {
+    total: number;
+    blocked: number;
+    admins: number;
+    owners: number;
+    staff: number;
+    tenants: number;
+  };
 };
 
-function AdminDashboardContent() {
-  const { data, loading, refetch } = useApi<AdminUsersResponse>("/admin/users");
+type AdminAuditLog = {
+  id: string;
+  action: string;
+  resource: string;
+  resourceId: string | null;
+  payloadJson: unknown;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  user: {
+    id: string;
+    phone: string;
+    role: AdminUser["role"];
+  } | null;
+};
+
+type AdminAuditResponse = {
+  items: AdminAuditLog[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+type RoleFilter = "ALL" | "ADMIN" | "OWNER" | "STAFF" | "TENANT";
+type StatusFilter = "ALL" | "ACTIVE" | "BLOCKED" | "LINKED";
+
+const roleFilters: RoleFilter[] = ["ALL", "ADMIN", "OWNER", "STAFF", "TENANT"];
+const statusFilters: StatusFilter[] = ["ALL", "ACTIVE", "BLOCKED", "LINKED"];
+
+function formatDate(value: string | null) {
+  if (!value) return "Never";
+  return new Date(value).toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function roleBadgeVariant(role: AdminUser["role"], blocked: boolean) {
+  if (blocked) return "destructive";
+  if (role === "ADMIN") return "destructive";
+  if (role === "OWNER") return "default";
+  if (role === "STAFF") return "warning";
+  return "secondary";
+}
+
+function hasLinkedData(user: AdminUser) {
+  return (user.ownerProfile?.propertyCount ?? 0) > 0 || user.tenantRecordCount > 0 || user.staffAssignmentCount > 0;
+}
+
+function describeUser(user: AdminUser) {
+  if (user.ownerProfile) {
+    const name = user.ownerProfile.displayName ?? "Unnamed owner";
+    return user.ownerProfile.companyName ? `${name} · ${user.ownerProfile.companyName}` : name;
+  }
+
+  if (user.tenantRecordCount > 0) {
+    return `${user.tenantRecordCount} tenant record${user.tenantRecordCount === 1 ? "" : "s"}`;
+  }
+
+  if (user.staffAssignmentCount > 0) {
+    return `${user.staffAssignmentCount} staff assignment${user.staffAssignmentCount === 1 ? "" : "s"}`;
+  }
+
+  return "No profile data";
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function isProtectedAdmin(user: AdminUser, currentUserId?: string) {
+  return user.role === "ADMIN" && user.id !== currentUserId;
+}
+
+function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
+  const { data, loading, error, refetch } = useApi<AdminUsersResponse>("/admin/users");
+  const { data: auditData, loading: auditLoading, refetch: refetchAudit } = useApi<AdminAuditResponse>("/admin/audit-logs?limit=8");
   const [updating, setUpdating] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>("ALL");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [operationSuccess, setOperationSuccess] = useState<string | null>(null);
 
   const users = data?.items ?? [];
-  const filteredUsers = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) {
-      return users;
-    }
-
-    return users.filter((user) => {
-      const displayName = user.ownerProfile?.displayName?.toLowerCase() ?? "";
-      const companyName = user.ownerProfile?.companyName?.toLowerCase() ?? "";
-      return (
-        user.phone.includes(normalized) ||
-        displayName.includes(normalized) ||
-        companyName.includes(normalized) ||
-        user.role.toLowerCase().includes(normalized)
-      );
-    });
-  }, [query, users]);
-
-  const stats = useMemo(() => ({
+  const summary = data?.summary ?? {
     total: users.length,
     admins: users.filter((user) => user.role === "ADMIN").length,
     owners: users.filter((user) => user.role === "OWNER").length,
-    tenants: users.filter((user) => user.role === "TENANT").length
-  }), [users]);
+    staff: users.filter((user) => user.role === "STAFF").length,
+    tenants: users.filter((user) => user.role === "TENANT").length,
+    blocked: users.filter((user) => user.isBlocked).length,
+  };
 
-  async function handleRoleChange(userId: string, newRole: "ADMIN" | "OWNER" | "TENANT") {
+  const filteredUsers = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+
+    return users.filter((user) => {
+      const searchable = [
+        user.phone,
+        user.role,
+        user.ownerProfile?.displayName ?? "",
+        user.ownerProfile?.companyName ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const matchesQuery = !normalized || searchable.includes(normalized);
+      const matchesRole = roleFilter === "ALL" || user.role === roleFilter;
+      const matchesStatus =
+        statusFilter === "ALL" ||
+        (statusFilter === "ACTIVE" && !user.isBlocked) ||
+        (statusFilter === "BLOCKED" && user.isBlocked) ||
+        (statusFilter === "LINKED" && hasLinkedData(user));
+
+      return matchesQuery && matchesRole && matchesStatus;
+    });
+  }, [query, roleFilter, statusFilter, users]);
+
+  async function runAction(userId: string, action: () => Promise<void>, successMessage: string) {
     setUpdating(userId);
+    setOperationError(null);
+    setOperationSuccess(null);
     try {
-      await fetchApi(`/admin/users/${userId}/role`, {
-        method: "PUT",
-        body: JSON.stringify({ role: newRole }),
-      });
-      refetch(); // Reload user list
+      await action();
+      setOperationSuccess(successMessage);
+      await refetch();
+      await refetchAudit();
     } catch (err) {
-      alert("Failed to update role");
-      console.error(err);
+      setOperationError(err instanceof ApiError ? err.message : "Action failed");
     } finally {
       setUpdating(null);
     }
   }
 
-  async function handleBlockToggle(userId: string, nextBlocked: boolean) {
-    setUpdating(userId);
-    try {
-      await fetchApi(`/admin/users/${userId}/${nextBlocked ? "block" : "unblock"}`, {
-        method: "POST",
-      });
-      refetch();
-    } catch (err) {
-      alert(nextBlocked ? "Failed to block user" : "Failed to unblock user");
-      console.error(err);
-    } finally {
-      setUpdating(null);
+  function handleRoleChange(user: AdminUser, newRole: AdminUser["role"]) {
+    if (isProtectedAdmin(user, currentUserId)) {
+      setOperationError("Other admin accounts are protected. Change them directly in the database only when you mean it.");
+      return;
     }
-  }
-
-  async function handleDelete(userId: string) {
-    const confirmed = window.confirm("Delete this user account? This cannot be undone.");
-    if (!confirmed) {
+    if (user.id === currentUserId && user.role === "ADMIN" && newRole !== "ADMIN") {
+      setOperationError("You cannot demote your own admin account.");
       return;
     }
 
-    setUpdating(userId);
-    try {
-      await fetchApi(`/admin/users/${userId}`, {
-        method: "DELETE",
-      });
-      refetch();
-    } catch (err) {
-      alert("Failed to delete user");
-      console.error(err);
-    } finally {
-      setUpdating(null);
+    void runAction(
+      user.id,
+      () =>
+        fetchApi(`/admin/users/${user.id}/role`, {
+          method: "PUT",
+          body: JSON.stringify({ role: newRole }),
+        }),
+      `Role changed to ${newRole}.`,
+    );
+  }
+
+  function handleBlockToggle(user: AdminUser) {
+    if (user.role === "ADMIN") {
+      setOperationError(user.id === currentUserId ? "You cannot block your own admin account." : "Admin accounts are protected from block actions.");
+      return;
     }
+
+    const nextBlocked = !user.isBlocked;
+    void runAction(
+      user.id,
+      () =>
+        fetchApi(`/admin/users/${user.id}/${nextBlocked ? "block" : "unblock"}`, {
+          method: "POST",
+        }),
+      nextBlocked ? "User blocked." : "User unblocked.",
+    );
+  }
+
+  function handleDelete(user: AdminUser) {
+    if (user.role === "ADMIN") {
+      setOperationError(user.id === currentUserId ? "You cannot delete your own admin account." : "Admin accounts are protected from deletion.");
+      return;
+    }
+
+    if (hasLinkedData(user)) {
+      setOperationError("Users with properties, tenant records, or staff assignments cannot be deleted. Block them instead.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${user.phone}? This removes the account and cannot be undone.`);
+    if (!confirmed) return;
+
+    void runAction(
+      user.id,
+      () =>
+        fetchApi(`/admin/users/${user.id}`, {
+          method: "DELETE",
+        }),
+      "User deleted.",
+    );
   }
 
   return (
-    <div className="flex flex-col gap-6 animate-fade-in">
-      <section className="bg-destructive/5 border border-destructive/20 p-6 rounded-2xl">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-3">
-          <ShieldAlert className="w-8 h-8 text-destructive" /> System Administration
-        </h1>
-        <p className="text-muted-foreground font-medium mt-1">
-          Manage system-wide permissions and roles here.
-        </p>
+    <div className="flex flex-col gap-5 animate-fade-in">
+      <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+                <ShieldAlert className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-destructive">Admin console</p>
+                <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground md:text-3xl">Users, Roles, And Access</h1>
+              </div>
+            </div>
+              <p className="mt-3 max-w-2xl text-sm font-medium text-muted-foreground">
+              Review accounts, change roles, block risky users, inspect audit activity, and remove only empty accounts.
+            </p>
+          </div>
+
+          <Button variant="outline" onClick={refetch} disabled={loading} className="gap-2">
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Refresh
+          </Button>
+        </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-4">
+      <section className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
         <Card className="border-border/80">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-semibold">Total Users</p>
-              <p className="mt-2 text-3xl font-bold text-foreground">{stats.total}</p>
+          <CardContent className="grid gap-3 p-4 md:grid-cols-3">
+            <div className="rounded-lg border border-border bg-secondary/20 p-4">
+              <div className="flex items-center gap-2 text-sm font-bold text-foreground">
+                <Lock className="h-4 w-4 text-destructive" />
+                Admin guard
+              </div>
+              <p className="mt-2 text-xs font-medium text-muted-foreground">Admins cannot demote, block, or delete other admins from UI/API.</p>
             </div>
-            <User className="w-5 h-5 text-muted-foreground" />
+            <div className="rounded-lg border border-border bg-secondary/20 p-4">
+              <div className="flex items-center gap-2 text-sm font-bold text-foreground">
+                <BriefcaseBusiness className="h-4 w-4 text-primary" />
+                Business data
+              </div>
+              <p className="mt-2 text-xs font-medium text-muted-foreground">Users with properties or tenant records can be blocked, not deleted.</p>
+            </div>
+            <div className="rounded-lg border border-border bg-secondary/20 p-4">
+              <div className="flex items-center gap-2 text-sm font-bold text-foreground">
+                <Database className="h-4 w-4 text-success" />
+                DB editor
+              </div>
+              <code className="mt-2 block rounded-md bg-background px-2 py-1 text-[11px] font-semibold text-foreground">corepack pnpm db:studio</code>
+            </div>
           </CardContent>
         </Card>
+
         <Card className="border-border/80">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-semibold">Admins</p>
-              <p className="mt-2 text-3xl font-bold text-foreground">{stats.admins}</p>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">Recent audit</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{auditData?.total ?? 0} total events</p>
+              </div>
+              <Activity className="h-5 w-5 text-muted-foreground" />
             </div>
-            <Shield className="w-5 h-5 text-destructive" />
-          </CardContent>
-        </Card>
-        <Card className="border-border/80">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-semibold">Owners</p>
-              <p className="mt-2 text-3xl font-bold text-foreground">{stats.owners}</p>
+            <div className="mt-3 flex max-h-44 flex-col gap-2 overflow-auto pr-1">
+              {auditLoading ? (
+                <div className="flex h-20 items-center justify-center">
+                  <Loader2 className="h-5 w-5 animate-spin text-destructive" />
+                </div>
+              ) : auditData?.items.length ? (
+                auditData.items.map((item) => (
+                  <div key={item.id} className="rounded-lg border border-border bg-secondary/20 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-bold text-foreground">{item.action}</p>
+                      <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        {formatDateTime(item.createdAt)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] font-medium text-muted-foreground">
+                      {item.user?.phone ?? "System"} · {item.resource}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="py-6 text-center text-xs font-medium text-muted-foreground">No audit events yet.</p>
+              )}
             </div>
-            <BriefcaseBusiness className="w-5 h-5 text-primary" />
-          </CardContent>
-        </Card>
-        <Card className="border-border/80">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-semibold">Tenants</p>
-              <p className="mt-2 text-3xl font-bold text-foreground">{stats.tenants}</p>
-            </div>
-            <Home className="w-5 h-5 text-emerald-600" />
           </CardContent>
         </Card>
       </section>
 
-      <Card className="shadow-float border-border/80">
-        <div className="p-4 border-b border-border bg-secondary/30">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <h2 className="font-bold text-lg flex items-center gap-2">
-              <UserCog className="w-5 h-5" /> User Directory
-            </h2>
-            <div className="relative w-full md:w-72">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search by phone, role, or owner"
-                className="pl-9"
-              />
+      <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <Card className="border-border/80">
+          <CardContent className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Total</p>
+              <p className="mt-2 text-3xl font-bold">{summary.total}</p>
+            </div>
+            <Users className="h-5 w-5 text-muted-foreground" />
+          </CardContent>
+        </Card>
+        <Card className="border-border/80">
+          <CardContent className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Admins</p>
+              <p className="mt-2 text-3xl font-bold">{summary.admins}</p>
+            </div>
+            <Shield className="h-5 w-5 text-destructive" />
+          </CardContent>
+        </Card>
+        <Card className="border-border/80">
+          <CardContent className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Owners</p>
+              <p className="mt-2 text-3xl font-bold">{summary.owners}</p>
+            </div>
+            <BriefcaseBusiness className="h-5 w-5 text-primary" />
+          </CardContent>
+        </Card>
+        <Card className="border-border/80">
+          <CardContent className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Tenants</p>
+              <p className="mt-2 text-3xl font-bold">{summary.tenants}</p>
+            </div>
+            <User className="h-5 w-5 text-success" />
+          </CardContent>
+        </Card>
+        <Card className="border-border/80">
+          <CardContent className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Staff</p>
+              <p className="mt-2 text-3xl font-bold">{summary.staff}</p>
+            </div>
+            <UserCog className="h-5 w-5 text-warning" />
+          </CardContent>
+        </Card>
+        <Card className="border-border/80">
+          <CardContent className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Blocked</p>
+              <p className="mt-2 text-3xl font-bold">{summary.blocked}</p>
+            </div>
+            <Ban className="h-5 w-5 text-destructive" />
+          </CardContent>
+        </Card>
+      </section>
+
+      {(error || operationError || operationSuccess) && (
+        <section
+          className={`rounded-lg border p-4 text-sm font-medium ${
+            operationSuccess
+              ? "border-success/20 bg-success/10 text-success"
+              : "border-destructive/20 bg-destructive/10 text-destructive"
+          }`}
+        >
+          <div className="flex items-start gap-2">
+            {operationSuccess ? <CheckCircle2 className="mt-0.5 h-4 w-4" /> : <AlertTriangle className="mt-0.5 h-4 w-4" />}
+            <p>{operationSuccess ?? operationError ?? error}</p>
+          </div>
+        </section>
+      )}
+
+      <Card className="overflow-hidden border-border/80 shadow-float">
+        <div className="border-b border-border bg-secondary/30 p-4">
+          <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto] lg:items-end">
+            <div>
+              <label htmlFor="admin-user-search" className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                Search directory
+              </label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="admin-user-search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Phone, owner name, company, role"
+                  className="pl-9"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="admin-role-filter" className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                Role
+              </label>
+              <select
+                id="admin-role-filter"
+                value={roleFilter}
+                onChange={(event) => setRoleFilter(event.target.value as RoleFilter)}
+                className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm font-semibold text-foreground outline-none focus:border-primary lg:w-40"
+              >
+                {roleFilters.map((role) => (
+                  <option key={role} value={role}>
+                    {role === "ALL" ? "All roles" : role}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="admin-status-filter" className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                Status
+              </label>
+              <select
+                id="admin-status-filter"
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+                className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm font-semibold text-foreground outline-none focus:border-primary lg:w-44"
+              >
+                {statusFilters.map((status) => (
+                  <option key={status} value={status}>
+                    {status === "ALL" ? "All users" : status === "LINKED" ? "Has data" : status}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </div>
+
         <CardContent className="p-0">
           {loading ? (
-            <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-destructive" /></div>
+            <div className="flex h-56 items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-destructive" />
+            </div>
           ) : filteredUsers.length ? (
-            <div className="divide-y divide-border">
-              {filteredUsers.map((u) => (
-                <div key={u.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-secondary/20 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-secondary rounded-full flex items-center justify-center shrink-0">
-                      <User className="w-5 h-5 text-muted-foreground" />
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-foreground tracking-tight">{u.phone}</span>
-                      <span className="text-xs text-muted-foreground mt-0.5">Joined: {new Date(u.createdAt).toLocaleDateString()}</span>
-                      {u.isBlocked ? (
-                        <span className="text-xs font-semibold text-destructive mt-0.5">
-                          Blocked{u.blockedAt ? ` · ${new Date(u.blockedAt).toLocaleDateString()}` : ""}
-                        </span>
-                      ) : null}
-                      {u.ownerProfile ? (
-                        <span className="text-xs text-muted-foreground mt-0.5">
-                          {u.ownerProfile.displayName ?? "Unnamed owner"}{u.ownerProfile.companyName ? ` · ${u.ownerProfile.companyName}` : ""}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Badge 
-                      variant={u.isBlocked ? "destructive" : u.role === "ADMIN" ? "destructive" : u.role === "OWNER" ? "default" : "secondary"}
-                      className="w-24 justify-center"
-                    >
-                      {u.isBlocked ? "BLOCKED" : (
-                        <>
-                          {u.role === "ADMIN" && <ShieldCheck className="w-3 h-3 mr-1" />}
-                          {u.role}
-                        </>
-                      )}
-                    </Badge>
-                    
-                    <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                      <div className="flex border border-border rounded-lg overflow-hidden h-9">
-                      {(["ADMIN", "OWNER", "TENANT"] as const).map(roleOption => (
-                        <button
-                          key={roleOption}
-                          disabled={u.role === roleOption || updating === u.id}
-                          onClick={() => handleRoleChange(u.id, roleOption)}
-                          className={`px-3 text-xs font-medium transition-colors ${
-                            u.role === roleOption 
-                              ? "bg-secondary text-foreground opacity-50 cursor-not-allowed hidden" 
-                              : "bg-background text-muted-foreground hover:bg-secondary hover:text-foreground"
-                          } ${updating === u.id ? "opacity-50" : ""}`}
-                        >
-                          Make {roleOption}
-                        </button>
-                      ))}
-                      </div>
-                      <Button
-                        variant={u.isBlocked ? "outline" : "destructive"}
-                        size="sm"
-                        disabled={updating === u.id}
-                        onClick={() => handleBlockToggle(u.id, !u.isBlocked)}
-                      >
-                        {u.isBlocked ? "Unblock" : "Block"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={updating === u.id}
-                        onClick={() => handleDelete(u.id)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+                <thead className="border-b border-border bg-card">
+                  <tr className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                    <th className="px-4 py-3">Account</th>
+                    <th className="px-4 py-3">Role</th>
+                    <th className="px-4 py-3">Linked Data</th>
+                    <th className="px-4 py-3">Joined</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filteredUsers.map((user) => {
+                    const linked = hasLinkedData(user);
+                    const busy = updating === user.id;
+                    const protectedAdmin = isProtectedAdmin(user, currentUserId);
+                    const self = user.id === currentUserId;
+                    return (
+                      <tr key={user.id} className="bg-card transition-colors hover:bg-secondary/30">
+                        <td className="px-4 py-4 align-top">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
+                              <UserCog className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <p className="font-bold tracking-tight text-foreground">{user.phone}</p>
+                              <p className="mt-1 text-xs font-medium text-muted-foreground">{describeUser(user)}</p>
+                              {user.isBlocked ? (
+                                <p className="mt-1 text-xs font-semibold text-destructive">Blocked on {formatDate(user.blockedAt)}</p>
+                              ) : null}
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {self ? <Badge variant="outline">You</Badge> : null}
+                                {protectedAdmin ? <Badge variant="destructive">Protected admin</Badge> : null}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 align-top">
+                          <Badge variant={roleBadgeVariant(user.role, user.isBlocked)} className="gap-1">
+                            {user.role === "ADMIN" ? <ShieldCheck className="h-3 w-3" /> : null}
+                            {user.isBlocked ? "BLOCKED" : user.role}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-4 align-top">
+                          <div className="flex flex-wrap gap-2">
+                            <Badge variant={user.ownerProfile?.propertyCount ? "default" : "outline"}>
+                              {user.ownerProfile?.propertyCount ?? 0} properties
+                            </Badge>
+                            <Badge variant={user.tenantRecordCount ? "success" : "outline"}>
+                              {user.tenantRecordCount} tenant records
+                            </Badge>
+                            <Badge variant={user.staffAssignmentCount ? "warning" : "outline"}>
+                              {user.staffAssignmentCount} staff links
+                            </Badge>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 align-top text-muted-foreground">{formatDate(user.createdAt)}</td>
+                        <td className="px-4 py-4 align-top">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            {(["ADMIN", "OWNER", "STAFF", "TENANT"] as const).map((roleOption) => (
+                              <Button
+                                key={roleOption}
+                                variant={user.role === roleOption ? "secondary" : "outline"}
+                                size="sm"
+                                disabled={
+                                  user.role === roleOption ||
+                                  busy ||
+                                  protectedAdmin ||
+                                  (self && user.role === "ADMIN" && roleOption !== "ADMIN")
+                                }
+                                title={protectedAdmin ? "Other admin accounts are protected" : undefined}
+                                onClick={() => handleRoleChange(user, roleOption)}
+                              >
+                                {roleOption}
+                              </Button>
+                            ))}
+                            <Button
+                              variant={user.isBlocked ? "outline" : "destructive"}
+                              size="sm"
+                              disabled={busy || user.role === "ADMIN"}
+                              onClick={() => handleBlockToggle(user)}
+                              title={user.role === "ADMIN" ? "Admin accounts are protected from block actions" : undefined}
+                              className="gap-1"
+                            >
+                              {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Ban className="h-3 w-3" />}
+                              {user.isBlocked ? "Unblock" : "Block"}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={busy || linked || user.role === "ADMIN"}
+                              onClick={() => handleDelete(user)}
+                              title={
+                                user.role === "ADMIN"
+                                  ? "Admin accounts are protected from deletion"
+                                  : linked
+                                    ? "Block users with linked property, tenant, or staff data instead"
+                                    : "Delete empty account"
+                              }
+                              className="gap-1 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              Delete
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           ) : (
-            <div className="p-12 text-center text-muted-foreground">
-              <p className="font-medium">No users found.</p>
-              <p className="mt-1 text-sm">If you expect admin access here, add your phone to `ADMIN_PHONES` in `.env` and log in again.</p>
+            <div className="flex h-56 flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
+              <Users className="h-9 w-9" />
+              <p className="font-semibold text-foreground">No users match current filters.</p>
+              <p className="text-sm">Clear search or switch filters to see all accounts.</p>
             </div>
           )}
         </CardContent>
       </Card>
-
-      <div className="flex justify-end">
-        <Button variant="outline" onClick={refetch}>Refresh Directory</Button>
-      </div>
     </div>
   );
 }
 
 export default function AdminDashboardPage() {
-  const { authorized } = useRequireRole("ADMIN");
-  
+  const { authorized, user } = useRequireRole("ADMIN");
+
   if (!authorized) return null;
 
   return (
     <AdminLayout activePath="/admin">
-      <AdminDashboardContent />
+      <AdminDashboardContent currentUserId={user?.id} />
     </AdminLayout>
   );
 }

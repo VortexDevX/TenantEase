@@ -6,7 +6,7 @@ import { ok } from "../../lib/http.js";
 import { createAuditLog } from "../common/audit.js";
 
 const updateRoleSchema = z.object({
-  role: z.enum(["ADMIN", "OWNER", "TENANT"])
+  role: z.enum(["ADMIN", "OWNER", "STAFF", "TENANT"])
 });
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -16,7 +16,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const limit = Math.min(parseInt(query.limit || "50", 10), 100);
     const offset = parseInt(query.offset || "0", 10);
 
-    const [users, total] = await Promise.all([
+    const [users, total, blocked, roleCounts] = await Promise.all([
       prisma.user.findMany({
         take: limit,
         skip: offset,
@@ -29,14 +29,99 @@ export async function adminRoutes(app: FastifyInstance) {
           blockedAt: true,
           createdAt: true,
           ownerProfile: {
-            select: { id: true, displayName: true, companyName: true }
+            select: {
+              id: true,
+              displayName: true,
+              companyName: true,
+              _count: { select: { properties: true } }
+            }
+          },
+          _count: {
+            select: { staffAssignments: true }
           }
         }
       }),
-      prisma.user.count()
+      prisma.user.count(),
+      prisma.user.count({ where: { isBlocked: true } }),
+      prisma.user.groupBy({
+        by: ["role"],
+        _count: { _all: true }
+      })
     ]);
 
-    return ok({ items: users, total, limit, offset });
+    const tenantCounts =
+      users.length > 0
+        ? await prisma.tenant.groupBy({
+            by: ["phone"],
+            where: {
+              phone: { in: users.map((user) => user.phone) }
+            },
+            _count: { _all: true }
+          })
+        : [];
+    const tenantCountByPhone = new Map(tenantCounts.map((item) => [item.phone, item._count._all]));
+    const roleSummary = Object.fromEntries(roleCounts.map((item) => [item.role, item._count._all]));
+
+    return ok({
+      items: users.map(({ _count, ...user }) => ({
+        ...user,
+        ownerProfile: user.ownerProfile
+          ? {
+              id: user.ownerProfile.id,
+              displayName: user.ownerProfile.displayName,
+              companyName: user.ownerProfile.companyName,
+              propertyCount: user.ownerProfile._count.properties
+            }
+          : null,
+        tenantRecordCount: tenantCountByPhone.get(user.phone) ?? 0,
+        staffAssignmentCount: _count.staffAssignments
+      })),
+      total,
+      limit,
+      offset,
+      summary: {
+        total,
+        blocked,
+        admins: roleSummary.ADMIN ?? 0,
+        owners: roleSummary.OWNER ?? 0,
+        staff: roleSummary.STAFF ?? 0,
+        tenants: roleSummary.TENANT ?? 0
+      }
+    });
+  });
+
+  app.get("/admin/audit-logs", { preHandler: [app.authenticateAdmin] }, async (request) => {
+    const query = request.query as { limit?: string; offset?: string };
+    const limit = Math.min(parseInt(query.limit || "20", 10), 100);
+    const offset = parseInt(query.offset || "0", 10);
+
+    const [items, total] = await Promise.all([
+      prisma.auditLog.findMany({
+        take: limit,
+        skip: offset,
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          action: true,
+          resource: true,
+          resourceId: true,
+          payloadJson: true,
+          ipAddress: true,
+          userAgent: true,
+          createdAt: true,
+          user: {
+            select: {
+              id: true,
+              phone: true,
+              role: true
+            }
+          }
+        }
+      }),
+      prisma.auditLog.count()
+    ]);
+
+    return ok({ items, total, limit, offset });
   });
 
   // Promote/change user role — ADMIN only
@@ -55,6 +140,10 @@ export async function adminRoutes(app: FastifyInstance) {
 
     if (user.role === "ADMIN" && request.user.sub !== id) {
       throw new AppError(403, "AUTH_FORBIDDEN", "Cannot change another admin's role via API");
+    }
+
+    if (user.role === "ADMIN" && request.user.sub === id && body.role !== "ADMIN") {
+      throw new AppError(403, "AUTH_FORBIDDEN", "You cannot demote your own admin account");
     }
 
     // If promoting to OWNER, create OwnerProfile if missing
@@ -101,6 +190,10 @@ export async function adminRoutes(app: FastifyInstance) {
 
     if (!user) {
       throw new AppError(404, "NOT_FOUND", "User not found");
+    }
+
+    if (user.role === "ADMIN") {
+      throw new AppError(403, "AUTH_FORBIDDEN", "Cannot block an admin account via API");
     }
 
     const updated = await prisma.user.update({
@@ -181,7 +274,16 @@ export async function adminRoutes(app: FastifyInstance) {
       select: {
         id: true,
         phone: true,
-        role: true
+        role: true,
+        ownerProfile: {
+          select: {
+            id: true,
+            _count: { select: { properties: true } }
+          }
+        },
+        _count: {
+          select: { staffAssignments: true }
+        }
       }
     });
 
@@ -189,8 +291,45 @@ export async function adminRoutes(app: FastifyInstance) {
       throw new AppError(404, "NOT_FOUND", "User not found");
     }
 
-    await prisma.user.delete({
-      where: { id }
+    if (user.role === "ADMIN") {
+      throw new AppError(403, "AUTH_FORBIDDEN", "Admin accounts are protected from deletion");
+    }
+
+    const tenantRecordCount = await prisma.tenant.count({
+      where: { phone: user.phone }
+    });
+    const propertyCount = user.ownerProfile?._count.properties ?? 0;
+    const staffAssignmentCount = user._count.staffAssignments;
+
+    if (propertyCount > 0 || tenantRecordCount > 0 || staffAssignmentCount > 0) {
+      throw new AppError(
+        422,
+        "USER_HAS_BUSINESS_DATA",
+        "Cannot delete a user with linked properties, tenant records, or staff assignments. Block the user instead.",
+        { propertyCount, tenantRecordCount, staffAssignmentCount }
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.otpChallenge.updateMany({
+        where: { userId: id },
+        data: { userId: null }
+      });
+      await tx.auditLog.updateMany({
+        where: { userId: id },
+        data: { userId: null }
+      });
+      await tx.maintenanceComment.updateMany({
+        where: { authorUserId: id },
+        data: { authorUserId: null }
+      });
+      await tx.maintenanceStatusChange.updateMany({
+        where: { changedByUserId: id },
+        data: { changedByUserId: null }
+      });
+      await tx.user.delete({
+        where: { id }
+      });
     });
 
     await createAuditLog({

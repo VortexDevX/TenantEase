@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Poppins } from 'next/font/google';
 import './globals.css';
 
@@ -11,6 +11,20 @@ const poppins = Poppins({
 export const metadata: Metadata = {
   title: 'TenantEase | PG Management',
   description: 'Smart Property & Tenant Management for India',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    title: 'TenantEase',
+    statusBarStyle: 'default'
+  },
+  icons: {
+    icon: '/tenant-ease-icon.svg',
+    apple: '/tenant-ease-icon.svg'
+  }
+};
+
+export const viewport: Viewport = {
+  themeColor: '#0f766e'
 };
 
 import { AuthProvider } from '../contexts/AuthContext';

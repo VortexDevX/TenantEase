@@ -13,10 +13,12 @@
     "test:api": "corepack pnpm --filter @tenantease/api test",
     "prisma:generate": "corepack pnpm --filter @tenantease/api prisma:generate",
     "prisma:migrate": "corepack pnpm --filter @tenantease/api prisma:migrate",
-    "prisma:seed": "corepack pnpm --filter @tenantease/api prisma:seed"
+    "prisma:seed": "corepack pnpm --filter @tenantease/api prisma:seed",
+    "db:studio": "corepack pnpm --filter @tenantease/api db:studio"
   },
   "pnpm": {
     "overrides": {
+      "@hono/node-server": ">=1.19.13",
       "defu": "^6.1.5",
       "fast-uri": "^3.1.2",
       "postcss": "^8.5.10"

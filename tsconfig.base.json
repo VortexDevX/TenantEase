@@ -8,10 +8,8 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "baseUrl": ".",
     "paths": {
-      "@tenantease/types": ["packages/types/src/index.ts"]
+      "@tenantease/types": ["./packages/types/src/index.ts"]
     }
   }
 }
-

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fetchApi } from "@/lib/api-client";
+import { ApiError, fetchApi } from "@/lib/api-client";
 import { Loader2, X } from "lucide-react";
 import type { PropertyType } from "@tenantease/types";
 
@@ -34,8 +34,12 @@ export function CreatePropertyModal({ onClose, onSuccess }: CreatePropertyModalP
         body: JSON.stringify(formData),
       });
       onSuccess();
-    } catch (err: any) {
-       setError(err.message || "Failed to create property.");
+    } catch (err) {
+       if (err instanceof ApiError && err.code === "PLAN_LIMIT_PROPERTIES") {
+         setError("Free plan allows 1 property. Open Plan & Billing to review upgrade options.");
+       } else {
+         setError(err instanceof Error ? err.message : "Failed to create property.");
+       }
     } finally {
        setLoading(false);
     }
@@ -46,7 +50,13 @@ export function CreatePropertyModal({ onClose, onSuccess }: CreatePropertyModalP
       <div className="bg-card w-full max-w-md rounded-2xl shadow-float border border-border overflow-hidden animate-slide-up">
         <div className="flex justify-between items-center p-4 border-b border-border bg-secondary/30">
            <h2 className="font-bold text-lg text-foreground tracking-tight">Add New Property</h2>
-           <button onClick={onClose} className="p-1.5 text-muted-foreground hover:bg-background rounded-full transition-colors">
+           <button
+             type="button"
+             onClick={onClose}
+             className="p-1.5 text-muted-foreground hover:bg-background rounded-full transition-colors"
+             aria-label="Close add property modal"
+             title="Close"
+           >
               <X size={18} />
            </button>
         </div>
@@ -59,14 +69,16 @@ export function CreatePropertyModal({ onClose, onSuccess }: CreatePropertyModalP
            )}
 
            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-semibold">Property Name</label>
-              <Input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="e.g. Sunrise PG" />
+              <label htmlFor="property-name" className="text-sm font-semibold">Property Name</label>
+              <Input id="property-name" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="e.g. Sunrise PG" />
            </div>
 
            <div className="grid grid-cols-2 gap-4">
              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold">Type</label>
+                <label htmlFor="property-type" className="text-sm font-semibold">Type</label>
                 <select 
+                  id="property-type"
+                  title="Property type"
                   className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                   value={formData.type} 
                   onChange={e => setFormData({...formData, type: e.target.value as PropertyType})}
@@ -77,14 +89,15 @@ export function CreatePropertyModal({ onClose, onSuccess }: CreatePropertyModalP
                 </select>
              </div>
              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold">Pin Code</label>
-                <Input required value={formData.pinCode} onChange={e => setFormData({...formData, pinCode: e.target.value})} placeholder="e.g. 560001" />
+                <label htmlFor="property-pin-code" className="text-sm font-semibold">Pin Code</label>
+                <Input id="property-pin-code" required value={formData.pinCode} onChange={e => setFormData({...formData, pinCode: e.target.value})} placeholder="e.g. 560001" />
              </div>
            </div>
 
            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-semibold">Full Address</label>
+              <label htmlFor="property-address" className="text-sm font-semibold">Full Address</label>
               <textarea 
+                id="property-address"
                 required 
                 rows={2}
                 className="flex w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
@@ -96,12 +109,12 @@ export function CreatePropertyModal({ onClose, onSuccess }: CreatePropertyModalP
 
            <div className="grid grid-cols-2 gap-4">
              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold">City</label>
-                <Input required value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} placeholder="e.g. Bangalore" />
+                <label htmlFor="property-city" className="text-sm font-semibold">City</label>
+                <Input id="property-city" required value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} placeholder="e.g. Bangalore" />
              </div>
              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold">State</label>
-                <Input required value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})} placeholder="e.g. Karnataka" />
+                <label htmlFor="property-state" className="text-sm font-semibold">State</label>
+                <Input id="property-state" required value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})} placeholder="e.g. Karnataka" />
              </div>
            </div>
 

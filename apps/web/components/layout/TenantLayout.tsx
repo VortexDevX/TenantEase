@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Home, Wrench, FileText, LogOut, Megaphone, ScrollText } from "lucide-react";
+import { clearAuthTokens } from "@/lib/api-client";
 
 interface TenantLayoutProps {
   children: React.ReactNode;
@@ -57,7 +58,7 @@ export function TenantLayout({ children, activePath }: TenantLayoutProps) {
         <div className="mt-auto flex flex-col gap-3">
           <button
             onClick={() => {
-              localStorage.removeItem("te_access_token");
+              clearAuthTokens();
               window.location.href = "/login";
             }}
             className="flex items-center justify-center gap-2 p-3 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors border border-transparent hover:border-destructive/20 font-medium w-full text-sm"

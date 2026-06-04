@@ -5,8 +5,9 @@ import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
 import { createAuditLog } from "../common/audit.js";
 import { assertPropertyOwnership } from "../common/owner.js";
-import { propertyInputSchema } from "../common/schemas.js";
-import { toPropertyDto } from "../common/serializers.js";
+import { propertyInputSchema, propertySettingsSchema } from "../common/schemas.js";
+import { toPropertyDto, toPropertySettingsDto } from "../common/serializers.js";
+import { assertCanCreateProperty } from "../subscriptions/service.js";
 
 export async function propertyRoutes(app: FastifyInstance) {
   app.get("/properties", { preHandler: [app.authenticate] }, async (request) => {
@@ -27,16 +28,27 @@ export async function propertyRoutes(app: FastifyInstance) {
   app.post("/properties", { preHandler: [app.authenticate] }, async (request) => {
     const body = propertyInputSchema.parse(request.body);
     const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
-    const property = await prisma.property.create({
-      data: {
-        ...body,
-        ownerProfileId
-      },
-      include: {
-        rooms: {
-          select: { bedCount: true, occupiedBeds: true }
+    const property = await prisma.$transaction(async (tx) => {
+      await assertCanCreateProperty(ownerProfileId, tx);
+      return tx.property.create({
+        data: {
+          ...body,
+          ownerProfileId,
+          settings: {
+            create: {
+              contactPhone: null
+            }
+          },
+          reminderConfig: {
+            create: {}
+          }
+        },
+        include: {
+          rooms: {
+            select: { bedCount: true, occupiedBeds: true }
+          }
         }
-      }
+      });
     });
     await createAuditLog({
       userId: request.user.sub,
@@ -49,6 +61,48 @@ export async function propertyRoutes(app: FastifyInstance) {
     });
 
     return ok(toPropertyDto(property));
+  });
+
+  app.get("/properties/:id/settings", { preHandler: [app.authenticate] }, async (request) => {
+    const params = request.params as { id: string };
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    await assertPropertyOwnership(params.id, ownerProfileId);
+
+    const settings = await prisma.propertySettings.upsert({
+      where: { propertyId: params.id },
+      update: {},
+      create: { propertyId: params.id }
+    });
+
+    return ok(toPropertySettingsDto(settings));
+  });
+
+  app.put("/properties/:id/settings", { preHandler: [app.authenticate] }, async (request) => {
+    const params = request.params as { id: string };
+    const body = propertySettingsSchema.parse(request.body);
+    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+    await assertPropertyOwnership(params.id, ownerProfileId);
+
+    const settings = await prisma.propertySettings.upsert({
+      where: { propertyId: params.id },
+      update: body,
+      create: {
+        propertyId: params.id,
+        ...body
+      }
+    });
+
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "property.settings.update",
+      resource: "Property",
+      resourceId: params.id,
+      payload: body,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
+
+    return ok(toPropertySettingsDto(settings));
   });
 
   app.get("/properties/:id", { preHandler: [app.authenticate] }, async (request) => {

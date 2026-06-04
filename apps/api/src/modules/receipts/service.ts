@@ -13,12 +13,16 @@ export async function generateReceipt(paymentId: string, ownerProfileId: string)
       }
     },
     include: {
-      receipt: true,
+      receipts: {
+        orderBy: { generatedAt: "desc" }
+      },
       rentEntry: {
         include: {
           tenant: {
             include: {
-              property: true
+              property: {
+                include: { settings: true }
+              }
             }
           }
         }
@@ -34,11 +38,12 @@ export async function generateReceipt(paymentId: string, ownerProfileId: string)
     throw new AppError(422, "VALIDATION_ERROR", "Cannot generate receipt for a voided payment");
   }
 
-  if (payment.receipt) {
-    return payment.receipt;
+  const activeReceipt = payment.receipts.find((receipt) => !receipt.isVoided);
+  if (activeReceipt) {
+    return activeReceipt;
   }
 
-  const receiptNumber = `RCPT-${new Date().getUTCFullYear()}-${payment.id.slice(0, 8).toUpperCase()}`;
+  const receiptNumber = `RCPT-${new Date().getUTCFullYear()}-${payment.id.slice(0, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
   const pdf = await pdfProvider.createReceiptPdf({
     receiptNumber,
     propertyName: payment.rentEntry.tenant.property.name,
@@ -57,4 +62,35 @@ export async function generateReceipt(paymentId: string, ownerProfileId: string)
       filePath
     }
   });
+}
+
+export async function voidActiveReceiptsForPayment(paymentId: string) {
+  await prisma.receipt.updateMany({
+    where: {
+      paymentId,
+      isVoided: false
+    },
+    data: {
+      isVoided: true,
+      voidedAt: new Date()
+    }
+  });
+}
+
+export async function replaceReceiptForPayment(paymentId: string, ownerProfileId: string) {
+  await voidActiveReceiptsForPayment(paymentId);
+  const replacement = await generateReceipt(paymentId, ownerProfileId);
+
+  await prisma.receipt.updateMany({
+    where: {
+      paymentId,
+      isVoided: true,
+      replacedByReceiptId: null
+    },
+    data: {
+      replacedByReceiptId: replacement.id
+    }
+  });
+
+  return replacement;
 }

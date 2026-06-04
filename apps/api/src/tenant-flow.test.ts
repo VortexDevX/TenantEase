@@ -23,6 +23,13 @@ function randomPhone() {
 
 async function createOwnerAuth(): Promise<OwnerAuthResult> {
   const phone = randomPhone();
+  await prisma.user.create({
+    data: {
+      phone,
+      role: "OWNER",
+      ownerProfile: { create: {} }
+    }
+  });
   
   const sendOtpRes = await app.inject({
     method: "POST",
@@ -184,6 +191,33 @@ describe("Tenant Flow Integration", () => {
     const rentEntries = (rentRes.json() as { data: Array<{ amountDue: number }> }).data;
     expect(rentEntries.length).toBeGreaterThanOrEqual(1);
     expect(rentEntries[0].amountDue).toBe(1000000);
+  });
+
+  it("should expose tenant portal home and profile only for authenticated tenant", async () => {
+    const homeRes = await app.inject({
+      method: "GET",
+      url: "/tenant-portal/home",
+      headers: { authorization: `Bearer ${tenantToken}` }
+    });
+
+    expect(homeRes.statusCode).toBe(200);
+    const home = homeRes.json().data as {
+      profile: { id: string; propertyName: string; roomNumber: string };
+      currentRent: { amountDue: number } | null;
+    };
+    expect(home.profile.id).toBe(tenantId);
+    expect(home.profile.propertyName).toBe("Tenant Flow Test PG");
+    expect(home.profile.roomNumber).toBe("T101");
+    expect(home.currentRent?.amountDue).toBe(1000000);
+
+    const profileRes = await app.inject({
+      method: "GET",
+      url: "/tenant-portal/profile",
+      headers: { authorization: `Bearer ${tenantToken}` }
+    });
+
+    expect(profileRes.statusCode).toBe(200);
+    expect(profileRes.json().data.id).toBe(tenantId);
   });
 
   it("should allow tenant to create and fetch maintenance requests", async () => {

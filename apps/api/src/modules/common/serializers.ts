@@ -1,18 +1,25 @@
 import type {
   MaintenanceCommentDto,
   MaintenanceRequestDto,
+  NotificationDto,
   PaymentDto,
+  PropertySettingsDto,
   PropertyDto,
   ReceiptDto,
+  ReminderConfigDto,
+  ReminderLogDto,
   RentEntryDto,
+  RoomTransferRecordDto,
   RoomDto,
-  TenantDto
+  TenantDto,
+  VacateRecordDto
 } from "@tenantease/types";
 import type {
   PaymentMode,
   MaintenanceCategory,
   MaintenanceStatus,
   MaintenanceUrgency,
+  Notification,
   PropertyType,
   RentStatus,
   RoomStatus,
@@ -104,6 +111,7 @@ export function toPaymentDto(input: {
   amount: number;
   mode: PaymentMode;
   paidAt: Date;
+  referenceNumber: string | null;
   note: string | null;
   isVoided: boolean;
 }): PaymentDto {
@@ -118,13 +126,121 @@ export function toReceiptDto(input: {
   paymentId: string;
   receiptNumber: string;
   generatedAt: Date;
+  isVoided?: boolean;
 }): ReceiptDto {
   return {
     id: input.id,
     paymentId: input.paymentId,
     receiptNumber: input.receiptNumber,
     fileUrl: `/receipts/${input.id}/download`,
-    generatedAt: input.generatedAt.toISOString()
+    generatedAt: input.generatedAt.toISOString(),
+    isVoided: input.isVoided
+  };
+}
+
+export function toPropertySettingsDto(input: {
+  propertyId: string;
+  rentDueDay: number;
+  lateFeePerDay: number;
+  lateFeeGraceDays: number;
+  ownerPan: string | null;
+  contactPhone: string | null;
+}): PropertySettingsDto {
+  return { ...input };
+}
+
+export function toReminderConfigDto(input: {
+  propertyId: string;
+  preDueDays: number;
+  onDueEnabled: boolean;
+  overdueFrequency: string;
+  inAppEnabled: boolean;
+  smsEnabled: boolean;
+  whatsappEnabled: boolean;
+  emailEnabled: boolean;
+  friendlyTemplate: string;
+  overdueTemplate: string;
+}): ReminderConfigDto {
+  return {
+    ...input,
+    overdueFrequency: input.overdueFrequency === "WEEKLY" ? "WEEKLY" : "DAILY"
+  };
+}
+
+export function toReminderLogDto(input: {
+  id: string;
+  propertyId: string;
+  tenantId: string;
+  rentEntryId: string | null;
+  channel: string;
+  status: string;
+  message: string;
+  error: string | null;
+  sentAt: Date;
+  tenant: { fullName: string };
+}): ReminderLogDto {
+  return {
+    id: input.id,
+    propertyId: input.propertyId,
+    tenantId: input.tenantId,
+    rentEntryId: input.rentEntryId,
+    tenantName: input.tenant.fullName,
+    channel: input.channel,
+    status: input.status,
+    message: input.message,
+    error: input.error,
+    sentAt: input.sentAt.toISOString()
+  };
+}
+
+export function toNotificationDto(input: Pick<Notification, "id" | "title" | "content" | "category" | "readAt" | "createdAt">): NotificationDto {
+  return {
+    id: input.id,
+    title: input.title,
+    content: input.content,
+    category: input.category,
+    readAt: input.readAt?.toISOString() ?? null,
+    createdAt: input.createdAt.toISOString()
+  };
+}
+
+export function toRoomTransferRecordDto(input: {
+  id: string;
+  tenantId: string;
+  propertyId: string;
+  fromRoomId: string;
+  toRoomId: string;
+  effectiveDate: Date;
+  monthlyRentBefore: number;
+  monthlyRentAfter: number | null;
+  note: string | null;
+  createdAt: Date;
+}): RoomTransferRecordDto {
+  return {
+    ...input,
+    effectiveDate: input.effectiveDate.toISOString(),
+    createdAt: input.createdAt.toISOString()
+  };
+}
+
+export function toVacateRecordDto(input: {
+  id: string;
+  tenantId: string;
+  propertyId: string;
+  roomId: string;
+  vacatedAt: Date;
+  depositPaid: number;
+  damageDeduction: number;
+  pendingRent: number;
+  refundAmount: number;
+  refundStatus: string;
+  finalNotes: string | null;
+  createdAt: Date;
+}): VacateRecordDto {
+  return {
+    ...input,
+    vacatedAt: input.vacatedAt.toISOString(),
+    createdAt: input.createdAt.toISOString()
   };
 }
 

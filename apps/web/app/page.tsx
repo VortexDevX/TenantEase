@@ -93,9 +93,12 @@ function DashboardContent() {
             </div>
             <ReceiptText className="h-10 w-10 text-primary-foreground/70" />
           </div>
-          <div className="mt-5 h-2 overflow-hidden rounded-full bg-primary-foreground/20">
-            <div className="h-full rounded-full bg-primary-foreground transition-all duration-500" style={{ width: `${collectionPct}%` }}></div>
-          </div>
+          <progress
+            value={collectionPct}
+            max={100}
+            aria-label="This month collection rate"
+            className="progress-meter progress-meter-primary mt-5 h-2 w-full"
+          />
           <p className="mt-3 text-xs font-medium text-primary-foreground/75">
             {formatPaisaShort(totalPaid)} collected / {formatPaisaShort(totalDue)} expected
           </p>
@@ -140,9 +143,12 @@ function DashboardContent() {
             <p className="text-xs text-muted-foreground font-medium mt-1">
               {formatPaisaShort(totalPaid)} collected / {formatPaisaShort(totalDue)} expected
             </p>
-             <div className="w-full bg-border h-1.5 rounded-full mt-3 overflow-hidden">
-               <div className="bg-primary h-full rounded-full transition-all duration-500" style={{ width: `${collectionPct}%` }}></div>
-             </div>
+             <progress
+               value={collectionPct}
+               max={100}
+               aria-label="Rent collection rate"
+               className="progress-meter mt-3 h-1.5 w-full"
+             />
           </CardContent>
         </Card>
       </section>

@@ -2,9 +2,9 @@
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { fetchApi } from "../lib/api-client";
+import { clearAuthTokens, fetchApi, storeAuthTokens } from "../lib/api-client";
 
-type Role = "ADMIN" | "OWNER" | "TENANT";
+type Role = "ADMIN" | "OWNER" | "STAFF" | "TENANT";
 
 interface User {
   id: string;
@@ -17,13 +17,19 @@ interface User {
   propertyId?: string | null;
   fullName?: string | null;
   hasBooking?: boolean;
+  staffAssignments?: Array<{
+    id: string;
+    propertyId: string;
+    propertyName: string;
+    role: "MANAGER" | "ACCOUNTANT" | "WARDEN";
+  }>;
 }
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (token: string, user: User, isNewUser: boolean) => void;
-  logout: () => void;
+  login: (accessToken: string, refreshToken: string | undefined, user: User, isNewUser: boolean) => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -34,6 +40,7 @@ function roleHomePath(role: Role): string {
   switch (role) {
     case "ADMIN": return "/admin";
     case "OWNER": return "/";
+    case "STAFF": return "/staff-portal";
     case "TENANT": return "/tenant";
   }
 }
@@ -56,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(userData);
             router.replace(roleHomePath(userData.role));
           } catch {
-            localStorage.removeItem("te_access_token");
+            clearAuthTokens();
             setUser(null);
           }
         }
@@ -77,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           router.replace("/onboarding");
         }
       } catch {
-        localStorage.removeItem("te_access_token");
+        clearAuthTokens();
         setUser(null);
         router.replace("/login");
       } finally {
@@ -88,8 +95,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initAuth();
   }, [pathname, router]);
 
-  const login = useCallback((token: string, userData: User, isNewUser: boolean) => {
-    localStorage.setItem("te_access_token", token);
+  const login = useCallback((accessToken: string, refreshToken: string | undefined, userData: User, isNewUser: boolean) => {
+    storeAuthTokens(accessToken, refreshToken);
     setUser(userData);
 
     if (userData.role === "OWNER" && (isNewUser || !userData.displayName)) {
@@ -99,8 +106,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [router]);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem("te_access_token");
+  const logout = useCallback(async () => {
+    const refreshToken = localStorage.getItem("te_refresh_token");
+    if (refreshToken) {
+      await fetchApi("/auth/logout", {
+        method: "POST",
+        body: JSON.stringify({ refreshToken })
+      }).catch(() => undefined);
+    }
+    clearAuthTokens();
     setUser(null);
     router.push("/login");
   }, [router]);

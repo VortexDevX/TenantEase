@@ -1,0 +1,33 @@
+{
+  "name": "TenantEase",
+  "short_name": "TenantEase",
+  "description": "PG, hostel, and rental management for owners and tenants.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f766e",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/tenant-ease-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Tenant Portal",
+      "short_name": "Tenant",
+      "url": "/tenant",
+      "description": "Open tenant dashboard"
+    },
+    {
+      "name": "Payments",
+      "short_name": "Payments",
+      "url": "/payments",
+      "description": "Open payment ledger"
+    }
+  ]
+}

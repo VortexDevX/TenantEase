@@ -1,7 +1,20 @@
 import "dotenv/config";
+import dotenv from "dotenv";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient, PropertyType, RoomType } from "@prisma/client";
 
-const prisma = new PrismaClient();
+dotenv.config({ path: "../../.env", quiet: true });
+dotenv.config({ quiet: true });
+
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL is required to seed the database");
+}
+
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: databaseUrl }),
+});
 
 async function main() {
   const existingUser = await prisma.user.findUnique({
@@ -15,10 +28,22 @@ async function main() {
   const user = await prisma.user.create({
     data: {
       phone: "9999999999",
+      role: "OWNER",
       ownerProfile: {
         create: {
           displayName: "Demo Owner",
           companyName: "TenantEase Demo",
+          subscription: {
+            create: {
+              plan: "FREE",
+              maxProperties: 1,
+              maxStaffAccounts: 0,
+              smsEnabled: false,
+              whatsappEnabled: false,
+              emailEnabled: true,
+              onlinePaymentsEnabled: false,
+            },
+          },
         },
       },
     },
@@ -40,6 +65,23 @@ async function main() {
       state: "Karnataka",
       pinCode: "560001",
       type: PropertyType.PG,
+      settings: {
+        create: {
+          rentDueDay: 5,
+          lateFeePerDay: 5000,
+          lateFeeGraceDays: 3,
+          contactPhone: "9999999999",
+        },
+      },
+      reminderConfig: {
+        create: {
+          preDueDays: 3,
+          onDueEnabled: true,
+          overdueFrequency: "DAILY",
+          inAppEnabled: true,
+          smsEnabled: true,
+        },
+      },
     },
   });
 

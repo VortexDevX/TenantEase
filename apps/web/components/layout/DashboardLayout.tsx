@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { LayoutDashboard, Users, CreditCard, Wrench, LogOut, Building2, BedDouble, Megaphone, Zap, BarChart3, FileText } from "lucide-react";
+import { LayoutDashboard, Users, CreditCard, Wrench, LogOut, Building2, BedDouble, Megaphone, Zap, BarChart3, FileText, Crown, UserCog } from "lucide-react";
 import { PropertyProvider, useProperty } from "@/lib/PropertyContext";
+import { clearAuthTokens } from "@/lib/api-client";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,9 +16,11 @@ const navItems = [
   { icon: Building2, label: "Properties", href: "/properties" },
   { icon: BedDouble, label: "Rooms", href: "/rooms" },
   { icon: Users, label: "Tenants", href: "/tenants" },
+  { icon: UserCog, label: "Staff", href: "/staff" },
   { icon: Megaphone, label: "Announcements", href: "/announcements" },
   { icon: Zap, label: "Utilities", href: "/utilities" },
   { icon: CreditCard, label: "Payments", href: "/payments" },
+  { icon: Crown, label: "Plan", href: "/subscription" },
   { icon: FileText, label: "Agreements", href: "/agreements" },
   { icon: BarChart3, label: "Reports", href: "/reports" },
   { icon: Wrench, label: "Maintenance", href: "/maintenance" },
@@ -43,8 +46,9 @@ function LayoutShell({ children, activePath }: LayoutProps) {
         </div>
 
         <div className="mt-4 flex flex-col gap-3">
-          <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Active Property</label>
+          <label htmlFor="active-property-desktop" className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Active Property</label>
           <select
+            id="active-property-desktop"
             value={activeProperty?.id ?? ""}
             onChange={(event) => setActivePropertyId(event.target.value)}
             className="h-11 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground outline-none transition-colors focus:border-primary"
@@ -91,7 +95,7 @@ function LayoutShell({ children, activePath }: LayoutProps) {
           </div>
           <button 
             onClick={() => {
-              localStorage.removeItem("te_access_token");
+              clearAuthTokens();
               window.location.href = "/login";
             }}
             className="flex items-center justify-center gap-2 p-3 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors border border-transparent hover:border-destructive/20 font-medium w-full text-sm"
@@ -117,8 +121,9 @@ function LayoutShell({ children, activePath }: LayoutProps) {
         </header>
 
         <div className="md:hidden mb-4">
-          <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Active Property</label>
+          <label htmlFor="active-property-mobile" className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Active Property</label>
           <select
+            id="active-property-mobile"
             value={activeProperty?.id ?? ""}
             onChange={(event) => setActivePropertyId(event.target.value)}
             className="h-11 w-full rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground outline-none transition-colors focus:border-primary"

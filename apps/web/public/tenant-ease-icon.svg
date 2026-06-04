@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="TenantEase">
+  <rect width="512" height="512" rx="112" fill="#0f766e"/>
+  <path d="M126 236 256 132l130 104v136a32 32 0 0 1-32 32H158a32 32 0 0 1-32-32V236Z" fill="#ecfeff"/>
+  <path d="M184 404V260h144v144h-48v-96h-48v96h-48Z" fill="#134e4a"/>
+  <path d="M104 250 256 128l152 122" fill="none" stroke="#fbbf24" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="346" cy="166" r="24" fill="#fbbf24"/>
+</svg>

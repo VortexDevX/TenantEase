@@ -21,6 +21,20 @@ function randomPhone() {
 }
 
 async function ownerAuth(phone = randomPhone()): Promise<AuthResult> {
+  const ownerUser = await prisma.user.upsert({
+    where: { phone },
+    update: { role: "OWNER" },
+    create: {
+      phone,
+      role: "OWNER",
+      ownerProfile: { create: {} }
+    },
+    include: { ownerProfile: true }
+  });
+  if (!ownerUser.ownerProfile) {
+    await prisma.ownerProfile.create({ data: { userId: ownerUser.id } });
+  }
+
   const sendOtpResponse = await app.inject({
     method: "POST",
     url: "/auth/send-otp",
@@ -177,7 +191,13 @@ describe("core owner flow", () => {
     });
 
     expect(paymentResponse.statusCode).toBe(200);
-    const paymentId = paymentResponse.json().data.id as string;
+    const paymentData = paymentResponse.json().data as {
+      payment: { id: string };
+      receipt: { id: string };
+    };
+    const paymentId = paymentData.payment.id;
+    const autoReceiptId = paymentData.receipt.id;
+    expect(autoReceiptId).toBeTruthy();
 
     const receiptResponse = await app.inject({
       method: "POST",
@@ -188,6 +208,7 @@ describe("core owner flow", () => {
 
     expect(receiptResponse.statusCode).toBe(200);
     const receiptId = receiptResponse.json().data.id as string;
+    expect(receiptId).toBe(autoReceiptId);
     const dbReceipt = await prisma.receipt.findUnique({ where: { id: receiptId } });
     expect(dbReceipt).not.toBeNull();
     if (dbReceipt?.filePath) {
@@ -202,6 +223,116 @@ describe("core owner flow", () => {
 
     expect(receiptDownloadResponse.statusCode).toBe(200);
     expect(receiptDownloadResponse.headers["content-type"]).toContain("application/pdf");
+  });
+
+  it("should use property settings for rent due date and reminder logs", async () => {
+    const auth = await ownerAuth();
+    const propertyId = await createProperty(auth.accessToken, "Settings Residency");
+    const roomId = await createRoom(auth.accessToken, propertyId, "302");
+    await createTenant(auth.accessToken, propertyId, roomId, "Reminder Tenant", "9876543214");
+
+    const settingsResponse = await app.inject({
+      method: "PUT",
+      url: `/properties/${propertyId}/settings`,
+      headers: { authorization: `Bearer ${auth.accessToken}` },
+      payload: {
+        rentDueDay: 12,
+        lateFeePerDay: 2500,
+        lateFeeGraceDays: 2,
+        ownerPan: "ABCDE1234F",
+        contactPhone: "9876543214"
+      }
+    });
+    expect(settingsResponse.statusCode).toBe(200);
+
+    const rentGenerateResponse = await app.inject({
+      method: "POST",
+      url: `/properties/${propertyId}/rent/generate`,
+      headers: { authorization: `Bearer ${auth.accessToken}` },
+      payload: { billingMonth: "2026-04" }
+    });
+    expect(rentGenerateResponse.statusCode).toBe(200);
+
+    const rentListResponse = await app.inject({
+      method: "GET",
+      url: `/properties/${propertyId}/rent?month=2026-04`,
+      headers: { authorization: `Bearer ${auth.accessToken}` }
+    });
+    const rentEntries = rentListResponse.json().data as Array<{ dueDate: string }>;
+    expect(rentEntries[0].dueDate.startsWith("2026-04-12")).toBe(true);
+
+    await prisma.rentEntry.updateMany({
+      where: {
+        tenant: { propertyId },
+        billingMonth: "2026-04"
+      },
+      data: {
+        status: "OVERDUE",
+        dueDate: new Date("2026-04-01T00:00:00.000Z")
+      }
+    });
+
+    const sendResponse = await app.inject({
+      method: "POST",
+      url: `/properties/${propertyId}/reminders/send`,
+      headers: { authorization: `Bearer ${auth.accessToken}` },
+      payload: { mode: "OVERDUE", billingMonth: "2026-04" }
+    });
+    expect(sendResponse.statusCode).toBe(200);
+    expect(sendResponse.json().data.sentCount).toBeGreaterThan(0);
+
+    const logsResponse = await app.inject({
+      method: "GET",
+      url: `/properties/${propertyId}/reminders/logs`,
+      headers: { authorization: `Bearer ${auth.accessToken}` }
+    });
+    expect(logsResponse.statusCode).toBe(200);
+    expect((logsResponse.json().data as Array<unknown>).length).toBeGreaterThan(0);
+  });
+
+  it("should expose free subscription limits and block second property", async () => {
+    const auth = await ownerAuth();
+    await createProperty(auth.accessToken, "Plan Limit Residency");
+
+    const subscriptionResponse = await app.inject({
+      method: "GET",
+      url: "/subscription",
+      headers: { authorization: `Bearer ${auth.accessToken}` }
+    });
+
+    expect(subscriptionResponse.statusCode).toBe(200);
+    expect(subscriptionResponse.json()).toMatchObject({
+      success: true,
+      data: {
+        plan: "FREE",
+        maxProperties: 1,
+        usage: {
+          properties: 1
+        }
+      }
+    });
+
+    const secondPropertyResponse = await app.inject({
+      method: "POST",
+      url: "/properties",
+      headers: { authorization: `Bearer ${auth.accessToken}` },
+      payload: {
+        name: "Blocked Second Residency",
+        address: "100 Residency Road",
+        city: "Bengaluru",
+        state: "Karnataka",
+        pinCode: "560026",
+        type: "PG"
+      }
+    });
+
+    expect(secondPropertyResponse.statusCode).toBe(402);
+    expect(secondPropertyResponse.json()).toMatchObject({
+      success: false,
+      error: {
+        code: "PLAN_LIMIT_PROPERTIES"
+      }
+    });
   });
 
   it("should enforce owner isolation and support refresh/logout", async () => {
@@ -270,7 +401,8 @@ describe("core owner flow", () => {
     });
 
     expect(transferResponse.statusCode).toBe(200);
-    expect(transferResponse.json().data.roomId).toBe(roomB);
+    expect(transferResponse.json().data.tenant.roomId).toBe(roomB);
+    expect(transferResponse.json().data.transferRecord.fromRoomId).toBe(roomA);
 
     const roomsResponse = await app.inject({
       method: "GET",
@@ -293,7 +425,8 @@ describe("core owner flow", () => {
     });
 
     expect(vacateResponse.statusCode).toBe(200);
-    expect(vacateResponse.json().data.status).toBe("VACATED");
+    expect(vacateResponse.json().data.tenant.status).toBe("VACATED");
+    expect(vacateResponse.json().data.vacateRecord.refundAmount).toBeGreaterThanOrEqual(0);
 
     const vacateAgainResponse = await app.inject({
       method: "POST",
@@ -345,7 +478,7 @@ describe("core owner flow", () => {
     });
 
     expect(paymentResponse.statusCode).toBe(200);
-    const paymentId = paymentResponse.json().data.id as string;
+    const paymentId = paymentResponse.json().data.payment.id as string;
 
     const paymentUpdateResponse = await app.inject({
       method: "PUT",
@@ -359,7 +492,8 @@ describe("core owner flow", () => {
     });
 
     expect(paymentUpdateResponse.statusCode).toBe(200);
-    expect(paymentUpdateResponse.json().data.amount).toBe(850000);
+    expect(paymentUpdateResponse.json().data.payment.amount).toBe(850000);
+    expect(paymentUpdateResponse.json().data.receipt.id).toBeTruthy();
 
     const rentAfterUpdate = await prisma.rentEntry.findUnique({ where: { id: freshRentEntryId } });
     expect(rentAfterUpdate?.status).toBe("PAID");
@@ -374,7 +508,7 @@ describe("core owner flow", () => {
     });
 
     expect(voidResponse.statusCode).toBe(200);
-    expect(voidResponse.json().data.isVoided).toBe(true);
+    expect(voidResponse.json().data.payment.isVoided).toBe(true);
 
     const rentAfterVoid = await prisma.rentEntry.findUnique({ where: { id: freshRentEntryId } });
     expect(rentAfterVoid?.status).toMatch(/UNPAID|OVERDUE/);
@@ -535,5 +669,259 @@ describe("core owner flow", () => {
       success: false,
       error: { code: "INVALID_MAINTENANCE_TRANSITION" }
     });
+  });
+});
+
+describe("staff assignment flow", () => {
+  it("enforces plan limits, invites staff, accepts OTP login, and revokes access", async () => {
+    const auth = await ownerAuth();
+    const propertyId = await createProperty(auth.accessToken, "Staff Test Residency");
+    const staffPhone = randomPhone();
+
+    const freeInviteResponse = await app.inject({
+      method: "POST",
+      url: "/staff/invite",
+      headers: { authorization: `Bearer ${auth.accessToken}` },
+      payload: {
+        propertyId,
+        phone: staffPhone,
+        role: "MANAGER"
+      }
+    });
+
+    expect(freeInviteResponse.statusCode).toBe(402);
+    expect(freeInviteResponse.json()).toMatchObject({
+      success: false,
+      error: { code: "PLAN_LIMIT_STAFF" }
+    });
+
+    await prisma.subscription.update({
+      where: { ownerProfileId: auth.ownerProfileId },
+      data: {
+        plan: "STARTER",
+        maxStaffAccounts: 1,
+        smsEnabled: true
+      }
+    });
+
+    const inviteResponse = await app.inject({
+      method: "POST",
+      url: "/staff/invite",
+      headers: { authorization: `Bearer ${auth.accessToken}` },
+      payload: {
+        propertyId,
+        phone: staffPhone,
+        email: "staff@example.com",
+        role: "MANAGER"
+      }
+    });
+
+    expect(inviteResponse.statusCode).toBe(200);
+    const assignmentId = inviteResponse.json().data.id as string;
+    expect(inviteResponse.json().data).toMatchObject({
+      phone: staffPhone,
+      propertyId,
+      role: "MANAGER",
+      inviteStatus: "PENDING",
+      isActive: true
+    });
+
+    const sendOtpResponse = await app.inject({
+      method: "POST",
+      url: "/auth/send-otp",
+      payload: { phone: staffPhone }
+    });
+    expect(sendOtpResponse.statusCode).toBe(200);
+
+    const verifyResponse = await app.inject({
+      method: "POST",
+      url: "/auth/verify-otp",
+      payload: {
+        phone: staffPhone,
+        otp: sendOtpResponse.json().data.debugOtp,
+        challengeId: sendOtpResponse.json().data.challengeId
+      }
+    });
+
+    expect(verifyResponse.statusCode).toBe(200);
+    expect(verifyResponse.json().data.user.role).toBe("STAFF");
+    const staffAccessToken = verifyResponse.json().data.accessToken as string;
+
+    const meResponse = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: { authorization: `Bearer ${staffAccessToken}` }
+    });
+
+    expect(meResponse.statusCode).toBe(200);
+    expect(meResponse.json().data.staffAssignments).toEqual([
+      expect.objectContaining({
+        id: assignmentId,
+        propertyId,
+        propertyName: "Staff Test Residency",
+        role: "MANAGER",
+        inviteStatus: "ACCEPTED"
+      })
+    ]);
+
+    const staffRoomsResponse = await app.inject({
+      method: "GET",
+      url: `/properties/${propertyId}/rooms`,
+      headers: { authorization: `Bearer ${staffAccessToken}` }
+    });
+
+    expect(staffRoomsResponse.statusCode).toBe(200);
+
+    const staffRoomCreateResponse = await app.inject({
+      method: "POST",
+      url: `/properties/${propertyId}/rooms`,
+      headers: { authorization: `Bearer ${staffAccessToken}` },
+      payload: {
+        roomNumber: "S101",
+        type: "DOUBLE",
+        bedCount: 2,
+        monthlyRent: 750000,
+        depositAmount: 1000000
+      }
+    });
+
+    expect(staffRoomCreateResponse.statusCode).toBe(200);
+    const staffRoomId = staffRoomCreateResponse.json().data.id as string;
+    const staffTenantPhone = randomPhone();
+
+    const staffTenantCreateResponse = await app.inject({
+      method: "POST",
+      url: `/properties/${propertyId}/tenants`,
+      headers: { authorization: `Bearer ${staffAccessToken}` },
+      payload: {
+        roomId: staffRoomId,
+        fullName: "Staff Managed Tenant",
+        phone: staffTenantPhone,
+        moveInDate: "2026-03-01",
+        monthlyRent: 750000,
+        depositPaid: 1000000
+      }
+    });
+
+    expect(staffTenantCreateResponse.statusCode).toBe(200);
+    const staffTenantId = staffTenantCreateResponse.json().data.id as string;
+
+    const staffRentGenerateResponse = await app.inject({
+      method: "POST",
+      url: `/properties/${propertyId}/rent/generate`,
+      headers: { authorization: `Bearer ${staffAccessToken}` },
+      payload: { billingMonth: "2026-05" }
+    });
+
+    expect(staffRentGenerateResponse.statusCode).toBe(200);
+
+    const staffRentResponse = await app.inject({
+      method: "GET",
+      url: `/tenants/${staffTenantId}/rent`,
+      headers: { authorization: `Bearer ${staffAccessToken}` }
+    });
+
+    expect(staffRentResponse.statusCode).toBe(200);
+    const staffRentEntryId = (staffRentResponse.json().data as Array<{ id: string }>).find(Boolean)?.id;
+    expect(staffRentEntryId).toBeTruthy();
+
+    const staffPaymentResponse = await app.inject({
+      method: "POST",
+      url: "/payments",
+      headers: { authorization: `Bearer ${staffAccessToken}` },
+      payload: {
+        rentEntryId: staffRentEntryId,
+        amount: 750000,
+        mode: "UPI",
+        paidAt: new Date().toISOString()
+      }
+    });
+
+    expect(staffPaymentResponse.statusCode).toBe(200);
+
+    const staffSubscriptionResponse = await app.inject({
+      method: "GET",
+      url: "/subscription",
+      headers: { authorization: `Bearer ${staffAccessToken}` }
+    });
+
+    expect(staffSubscriptionResponse.statusCode).toBe(403);
+
+    const accountantUpdateResponse = await app.inject({
+      method: "PUT",
+      url: `/staff/${assignmentId}`,
+      headers: { authorization: `Bearer ${auth.accessToken}` },
+      payload: {
+        role: "ACCOUNTANT"
+      }
+    });
+
+    expect(accountantUpdateResponse.statusCode).toBe(200);
+
+    const accountantTenantCreateResponse = await app.inject({
+      method: "POST",
+      url: `/properties/${propertyId}/tenants`,
+      headers: { authorization: `Bearer ${staffAccessToken}` },
+      payload: {
+        roomId: staffRoomId,
+        fullName: "Blocked Accountant Tenant",
+        phone: randomPhone(),
+        moveInDate: "2026-03-01",
+        monthlyRent: 750000,
+        depositPaid: 1000000
+      }
+    });
+
+    expect(accountantTenantCreateResponse.statusCode).toBe(403);
+    expect(accountantTenantCreateResponse.json()).toMatchObject({
+      success: false,
+      error: { code: "AUTH_STAFF_NO_PERMISSION" }
+    });
+
+    const accountantReportResponse = await app.inject({
+      method: "GET",
+      url: `/properties/${propertyId}/reports/monthly?month=5&year=2026`,
+      headers: { authorization: `Bearer ${staffAccessToken}` }
+    });
+
+    expect(accountantReportResponse.statusCode).toBe(200);
+
+    const subscriptionResponse = await app.inject({
+      method: "GET",
+      url: "/subscription",
+      headers: { authorization: `Bearer ${auth.accessToken}` }
+    });
+
+    expect(subscriptionResponse.statusCode).toBe(200);
+    expect(subscriptionResponse.json().data.usage.staffAccounts).toBe(1);
+
+    const revokeResponse = await app.inject({
+      method: "DELETE",
+      url: `/staff/${assignmentId}`,
+      headers: { authorization: `Bearer ${auth.accessToken}` }
+    });
+
+    expect(revokeResponse.statusCode).toBe(200);
+    expect(revokeResponse.json().data).toMatchObject({
+      inviteStatus: "REVOKED",
+      isActive: false
+    });
+
+    const subscriptionAfterRevokeResponse = await app.inject({
+      method: "GET",
+      url: "/subscription",
+      headers: { authorization: `Bearer ${auth.accessToken}` }
+    });
+
+    expect(subscriptionAfterRevokeResponse.statusCode).toBe(200);
+    expect(subscriptionAfterRevokeResponse.json().data.usage.staffAccounts).toBe(0);
+
+    const revokedStaffRoomsResponse = await app.inject({
+      method: "GET",
+      url: `/properties/${propertyId}/rooms`,
+      headers: { authorization: `Bearer ${staffAccessToken}` }
+    });
+
+    expect(revokedStaffRoomsResponse.statusCode).toBe(403);
   });
 });

@@ -1,19 +1,45 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useRequireRole } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Building, Plus, MapPin, Loader2 } from "lucide-react";
 import { useProperty } from "@/lib/PropertyContext";
+import { fetchApi } from "@/lib/api-client";
 import { CreatePropertyModal } from "@/components/properties/CreatePropertyModal";
+import type { PropertySettingsDto } from "@tenantease/types";
 
 export default function PropertiesPage() {
   const { authorized } = useRequireRole("OWNER");
   const { properties, loading: propLoading, refetch, setActivePropertyId, activeProperty } = useProperty();
   const [showModal, setShowModal] = useState(false);
+  const [settings, setSettings] = useState<PropertySettingsDto | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!activeProperty?.id) return;
+    fetchApi<PropertySettingsDto>(`/properties/${activeProperty.id}/settings`)
+      .then(setSettings)
+      .catch(() => setSettings(null));
+  }, [activeProperty?.id]);
+
+  async function saveSettings() {
+    if (!activeProperty?.id || !settings) return;
+    setSettingsSaving(true);
+    try {
+      const saved = await fetchApi<PropertySettingsDto>(`/properties/${activeProperty.id}/settings`, {
+        method: "PUT",
+        body: JSON.stringify(settings),
+      });
+      setSettings(saved);
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
   
   if (propLoading) return (
     <div className="flex justify-center items-center min-h-[50vh]">
@@ -97,6 +123,43 @@ export default function PropertiesPage() {
             </div>
           )}
         </div>
+
+        {activeProperty && settings && (
+          <Card className="border-border/80 shadow-soft">
+            <CardHeader>
+              <CardTitle className="text-lg">Property Settings</CardTitle>
+              <CardDescription>Rent due date, late fees, and receipt details for {activeProperty.name}.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-5">
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">Due Day</label>
+                <Input type="number" min={1} max={28} value={settings.rentDueDay} onChange={(e) => setSettings({ ...settings, rentDueDay: Number(e.target.value) })} />
+              </div>
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">Late Fee</label>
+                <Input type="number" min={0} value={settings.lateFeePerDay / 100} onChange={(e) => setSettings({ ...settings, lateFeePerDay: Math.round(Number(e.target.value) * 100) })} />
+              </div>
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">Grace Days</label>
+                <Input type="number" min={0} max={30} value={settings.lateFeeGraceDays} onChange={(e) => setSettings({ ...settings, lateFeeGraceDays: Number(e.target.value) })} />
+              </div>
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">Owner PAN</label>
+                <Input value={settings.ownerPan ?? ""} onChange={(e) => setSettings({ ...settings, ownerPan: e.target.value.toUpperCase() || null })} />
+              </div>
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">Contact</label>
+                <Input value={settings.contactPhone ?? ""} onChange={(e) => setSettings({ ...settings, contactPhone: e.target.value || null })} />
+              </div>
+              <div className="md:col-span-5 flex justify-end">
+                <Button onClick={saveSettings} disabled={settingsSaving}>
+                  {settingsSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Save Settings
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </DashboardLayout>
   );

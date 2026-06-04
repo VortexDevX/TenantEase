@@ -12,7 +12,7 @@ function signAccessToken(
   payload: {
     userId: string;
     phone: string;
-    role: "ADMIN" | "OWNER" | "TENANT";
+    role: "ADMIN" | "OWNER" | "STAFF" | "TENANT";
     ownerProfileId?: string;
     tenantId?: string;
   }
@@ -186,6 +186,40 @@ export async function authRoutes(app: FastifyInstance) {
         tenantId: tenantData?.id ?? null,
         fullName: tenantData?.fullName ?? null,
         hasBooking: !!tenantData
+      });
+    }
+
+    if (role === "STAFF") {
+      const assignments = await prisma.staffAssignment.findMany({
+        where: {
+          userId: request.user.sub,
+          isActive: true,
+          inviteStatus: { not: "REVOKED" }
+        },
+        include: {
+          property: { select: { id: true, name: true } }
+        },
+        orderBy: { invitedAt: "desc" }
+      });
+
+      return ok({
+        id: request.user.sub,
+        phone: request.user.phone,
+        role: "STAFF" as const,
+        staffAssignments: assignments.map((assignment) => ({
+          id: assignment.id,
+          userId: assignment.userId,
+          propertyId: assignment.propertyId,
+          propertyName: assignment.property.name,
+          phone: assignment.invitePhone,
+          email: assignment.inviteEmail,
+          role: assignment.role,
+          inviteStatus: assignment.inviteStatus,
+          isActive: assignment.isActive,
+          invitedAt: assignment.invitedAt.toISOString(),
+          acceptedAt: assignment.acceptedAt?.toISOString() ?? null,
+          deactivatedAt: assignment.deactivatedAt?.toISOString() ?? null
+        }))
       });
     }
 

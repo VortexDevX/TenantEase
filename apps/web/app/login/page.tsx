@@ -66,7 +66,7 @@ export default function LoginPage() {
         method: "POST",
         body: JSON.stringify({ phone, otp: submittedOtp, challengeId }),
       });
-      login(res.accessToken, res.user, res.isNewUser);
+      login(res.accessToken, res.refreshToken, res.user, res.isNewUser);
     } catch (err: any) {
       setError(err.message || "Invalid OTP");
     } finally {
@@ -83,7 +83,7 @@ export default function LoginPage() {
           </div>
           <div>
             <p className="text-xl font-bold tracking-tight">TenantEase</p>
-            <p className="text-sm font-medium text-muted-foreground">PG management for Indian owners</p>
+            <p className="text-sm font-medium text-muted-foreground">PG access for tenants and owners</p>
           </div>
         </div>
 
@@ -93,7 +93,7 @@ export default function LoginPage() {
             Rent, rooms, receipts, and requests in one steady workspace.
           </h1>
           <p className="mt-5 text-base font-medium leading-7 text-muted-foreground">
-            Sign in with phone OTP. TenantEase detects your role and routes you to the right dashboard.
+            Sign in with phone OTP. New phones start as tenant accounts; owners are upgraded from admin or seeded owner records.
           </p>
         </div>
 
@@ -239,7 +239,7 @@ export default function LoginPage() {
 
           <div className="mt-6 rounded-lg border border-border bg-secondary/40 px-4 py-3">
             <p className="text-xs font-medium leading-5 text-muted-foreground">
-              Role auto-detected after OTP. Owners, tenants, and admins land in separate protected areas.
+              New accounts start as tenants. Owners and admins are matched from existing records.
             </p>
           </div>
         </div>

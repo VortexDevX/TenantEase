@@ -10,9 +10,10 @@ import { formatPaisa } from "@/lib/format";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, CircleCheckBig, Loader2, Plus, ReceiptIndianRupee, TrendingUp } from "lucide-react";
-import { useMemo, useState } from "react";
-import type { RentEntryDto } from "@tenantease/types";
+import { AlertCircle, CircleCheckBig, Loader2, Plus, ReceiptIndianRupee, Send, TrendingUp } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Input } from "@/components/ui/input";
+import type { ReminderConfigDto, ReminderLogDto, RentEntryDto } from "@tenantease/types";
 
 type RentLedgerEntry = RentEntryDto & {
   tenantName?: string;
@@ -23,6 +24,10 @@ export default function PaymentsPage() {
   const { activeProperty } = useProperty();
   const propertyId = activeProperty?.id;
   const [generating, setGenerating] = useState(false);
+  const [sendingReminders, setSendingReminders] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [reminderConfig, setReminderConfig] = useState<ReminderConfigDto | null>(null);
+  const [reminderLogs, setReminderLogs] = useState<ReminderLogDto[]>([]);
   const { data: ledger, loading, refetch } = useApi<RentLedgerEntry[]>(
     propertyId ? `/properties/${propertyId}/rent` : null
   );
@@ -38,6 +43,12 @@ export default function PaymentsPage() {
   const partialEntries = (ledger ?? []).filter((entry) => entry.status === "PARTIAL");
   const collectionPct = expectedRent > 0 ? Math.round((collectedRent / expectedRent) * 100) : 0;
 
+  useEffect(() => {
+    if (!propertyId) return;
+    fetchApi<ReminderConfigDto>(`/properties/${propertyId}/reminders/config`).then(setReminderConfig).catch(() => setReminderConfig(null));
+    fetchApi<ReminderLogDto[]>(`/properties/${propertyId}/reminders/logs`).then(setReminderLogs).catch(() => setReminderLogs([]));
+  }, [propertyId]);
+
   async function handleGenerateRentRoll() {
     if (!propertyId) return;
     setGenerating(true);
@@ -48,6 +59,36 @@ export default function PaymentsPage() {
       alert(err.message || "Failed to generate rent roll");
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function saveReminderConfig() {
+    if (!propertyId || !reminderConfig) return;
+    setSavingConfig(true);
+    try {
+      const saved = await fetchApi<ReminderConfigDto>(`/properties/${propertyId}/reminders/config`, {
+        method: "PUT",
+        body: JSON.stringify(reminderConfig),
+      });
+      setReminderConfig(saved);
+    } finally {
+      setSavingConfig(false);
+    }
+  }
+
+  async function sendOverdueReminders() {
+    if (!propertyId) return;
+    setSendingReminders(true);
+    try {
+      await fetchApi(`/properties/${propertyId}/reminders/send`, {
+        method: "POST",
+        body: JSON.stringify({ mode: "OVERDUE" }),
+      });
+      const logs = await fetchApi<ReminderLogDto[]>(`/properties/${propertyId}/reminders/logs`);
+      setReminderLogs(logs);
+      refetch();
+    } finally {
+      setSendingReminders(false);
     }
   }
 
@@ -131,6 +172,65 @@ export default function PaymentsPage() {
             </CardContent>
           </Card>
         </div>
+
+        {reminderConfig && (
+          <Card className="border-border shadow-soft">
+            <div className="flex flex-col gap-3 border-b border-border bg-secondary/30 p-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h2 className="text-lg font-bold">Rent Reminders</h2>
+                <p className="text-sm text-muted-foreground">Configure timing, then send logged in-app/SMS reminders to overdue tenants.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={saveReminderConfig} disabled={savingConfig}>
+                  {savingConfig ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Save Config
+                </Button>
+                <Button onClick={sendOverdueReminders} disabled={!propertyId || sendingReminders}>
+                  {sendingReminders ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                  Send Overdue
+                </Button>
+              </div>
+            </div>
+            <CardContent className="grid gap-4 p-5 lg:grid-cols-[1fr_1fr_1.2fr]">
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pre-Due Days</label>
+                <Input type="number" min={0} max={30} value={reminderConfig.preDueDays} onChange={(e) => setReminderConfig({ ...reminderConfig, preDueDays: Number(e.target.value) })} />
+              </div>
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">Overdue Frequency</label>
+                <select
+                  value={reminderConfig.overdueFrequency}
+                  onChange={(e) => setReminderConfig({ ...reminderConfig, overdueFrequency: e.target.value as "DAILY" | "WEEKLY" })}
+                  className="h-12 w-full rounded-lg border border-border bg-background px-3 text-sm font-medium"
+                >
+                  <option value="DAILY">Daily</option>
+                  <option value="WEEKLY">Weekly</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm font-medium">
+                {(["inAppEnabled", "smsEnabled", "whatsappEnabled", "emailEnabled"] as const).map((key) => (
+                  <label key={key} className="flex h-12 items-center gap-2 rounded-lg border border-border px-3">
+                    <input type="checkbox" checked={reminderConfig[key]} onChange={(e) => setReminderConfig({ ...reminderConfig, [key]: e.target.checked })} />
+                    {key.replace("Enabled", "").replace("inApp", "In-app")}
+                  </label>
+                ))}
+              </div>
+              <div className="lg:col-span-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recent Reminder Logs</p>
+                <div className="max-h-40 overflow-auto rounded-lg border border-border">
+                  {reminderLogs.length > 0 ? reminderLogs.slice(0, 6).map((log) => (
+                    <div key={log.id} className="flex items-center justify-between gap-3 border-b border-border p-3 text-sm last:border-0">
+                      <span className="font-medium text-foreground">{log.tenantName}</span>
+                      <span className="text-muted-foreground">{log.channel} · {log.status}</span>
+                    </div>
+                  )) : (
+                    <div className="p-4 text-sm text-muted-foreground">No reminders sent yet.</div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="border-border shadow-float">
           <div className="flex items-center justify-between border-b border-border bg-secondary/30 p-4">

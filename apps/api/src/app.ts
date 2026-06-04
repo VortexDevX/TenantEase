@@ -13,6 +13,8 @@ import { receiptRoutes } from "./modules/receipts/routes.js";
 import { remindersRoutes } from "./modules/reminders/routes.js";
 import { rentRoutes } from "./modules/rent/routes.js";
 import { roomRoutes } from "./modules/rooms/routes.js";
+import { subscriptionRoutes } from "./modules/subscriptions/routes.js";
+import { staffRoutes } from "./modules/staff/routes.js";
 import { systemRoutes } from "./modules/system/routes.js";
 import { dashboardRoutes } from "./modules/dashboard/routes.js";
 import { tenantPortalRoutes } from "./modules/tenant-portal/routes.js";
@@ -60,6 +62,8 @@ export function createApp() {
   app.register(documentRoutes);
   app.register(propertyRoutes);
   app.register(roomRoutes);
+  app.register(subscriptionRoutes);
+  app.register(staffRoutes);
   app.register(tenantRoutes);
   app.register(importTenantRoutes);
   app.register(announcementRoutes);
@@ -76,7 +80,7 @@ export function createApp() {
   app.register(agreementRoutes);
   app.register(reportsRoutes);
 
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     if (error instanceof AppError) {
       return reply.status(error.statusCode).send({
         success: false,
@@ -97,6 +101,11 @@ export function createApp() {
           details: (error as { issues?: unknown }).issues
         }
       });
+    }
+
+    if (env.NODE_ENV !== "production") {
+      request.log.error(error);
+      console.error(error);
     }
 
     return reply.status(500).send({
