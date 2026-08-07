@@ -1,7 +1,7 @@
 import { env } from "../lib/env.js";
 import { AppError } from "../lib/errors.js";
 
-export interface SmsProvider {
+interface SmsProvider {
   sendOtp(phone: string, otpCode: string, challengeId: string): Promise<void>;
   sendSms(phone: string, message: string, metadata?: Record<string, unknown>): Promise<void>;
 }
@@ -33,7 +33,8 @@ class TextbeltSmsProvider implements SmsProvider {
         message,
         key: env.SMS_API_KEY || "textbelt",
         sender: env.SMS_SENDER_NAME
-      })
+      }),
+      signal: AbortSignal.timeout(10_000)
     });
     const payload = (await response.json().catch(() => null)) as { success?: boolean; error?: string } | null;
 
@@ -44,6 +45,19 @@ class TextbeltSmsProvider implements SmsProvider {
 }
 
 class HttpSmsProvider implements SmsProvider {
+  private get endpoint() {
+    if (!env.SMS_HTTP_URL) {
+      throw new AppError(500, "CONFIG_ERROR", "SMS_HTTP_URL is required for HTTP SMS provider");
+    }
+
+    const endpoint = new URL(env.SMS_HTTP_URL);
+    if (!["http:", "https:"].includes(endpoint.protocol)) {
+      throw new AppError(500, "CONFIG_ERROR", "SMS_HTTP_URL must use http or https");
+    }
+
+    return endpoint;
+  }
+
   async sendOtp(phone: string, otpCode: string, challengeId: string) {
     await this.sendSms(phone, `Your TenantEase OTP is ${otpCode}. It expires in 5 minutes.`, {
       purpose: "otp",
@@ -52,16 +66,12 @@ class HttpSmsProvider implements SmsProvider {
   }
 
   async sendSms(phone: string, message: string, metadata?: Record<string, unknown>) {
-    if (!env.SMS_HTTP_URL) {
-      throw new AppError(500, "CONFIG_ERROR", "SMS_HTTP_URL is required for HTTP SMS provider");
-    }
-
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (env.SMS_HTTP_AUTH_HEADER && env.SMS_HTTP_AUTH_VALUE) {
       headers[env.SMS_HTTP_AUTH_HEADER] = env.SMS_HTTP_AUTH_VALUE;
     }
 
-    const response = await fetch(env.SMS_HTTP_URL, {
+    const response = await fetch(this.endpoint, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -69,7 +79,8 @@ class HttpSmsProvider implements SmsProvider {
         message,
         sender: env.SMS_SENDER_NAME,
         metadata
-      })
+      }),
+      signal: AbortSignal.timeout(10_000)
     });
 
     if (!response.ok) {

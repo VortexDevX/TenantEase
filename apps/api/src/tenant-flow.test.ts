@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "./lib/db.js";
 import { createApp } from "./app.js";
+import { createRazorpayWebhookSignature } from "./providers/razorpay-provider.js";
 
 const app = createApp();
 const createdPhones = new Set<string>();
@@ -220,6 +221,213 @@ describe("Tenant Flow Integration", () => {
     expect(profileRes.json().data.id).toBe(tenantId);
   });
 
+  it("should create an online rent order and record captured webhook payment", async () => {
+    await prisma.subscription.update({
+      where: { ownerProfileId: ownerId },
+      data: {
+        plan: "PRO",
+        onlinePaymentsEnabled: true
+      }
+    });
+
+    const rentEntry = await prisma.rentEntry.findFirstOrThrow({
+      where: {
+        tenantId,
+        billingMonth: "2024-05"
+      }
+    });
+
+    const orderRes = await app.inject({
+      method: "POST",
+      url: "/tenant-portal/payments/orders",
+      headers: { authorization: `Bearer ${tenantToken}` },
+      payload: { rentEntryId: rentEntry.id }
+    });
+
+    expect(orderRes.statusCode).toBe(200);
+    const order = orderRes.json().data as {
+      id: string;
+      amount: number;
+      providerOrderId: string;
+      keyId: string;
+    };
+    expect(order.amount).toBe(1000000);
+    expect(order.providerOrderId).toMatch(/^order_/);
+    expect(order.keyId).toBeTruthy();
+
+    const webhookPayload = {
+      event: "payment.captured",
+      payload: {
+        payment: {
+          entity: {
+            id: "pay_tenant_flow_001",
+            order_id: order.providerOrderId,
+            amount: order.amount,
+            currency: "INR",
+            status: "captured",
+            captured_at: Math.floor(Date.now() / 1000)
+          }
+        }
+      }
+    };
+    const rawWebhookPayload = JSON.stringify(webhookPayload);
+    const webhookEventId = `evt_tenant_flow_${order.providerOrderId}`;
+
+    const webhookRes = await app.inject({
+      method: "POST",
+      url: "/webhooks/razorpay/payments",
+      headers: {
+        "content-type": "application/json",
+        "x-razorpay-signature": createRazorpayWebhookSignature(rawWebhookPayload),
+        "x-razorpay-event-id": webhookEventId
+      },
+      payload: rawWebhookPayload
+    });
+
+    expect(webhookRes.statusCode).toBe(200);
+    expect(webhookRes.json().data).toMatchObject({
+      processed: true,
+      eventId: webhookEventId
+    });
+
+    const rentAfterPayment = await prisma.rentEntry.findUnique({ where: { id: rentEntry.id } });
+    expect(rentAfterPayment?.amountPaid).toBe(1000000);
+    expect(rentAfterPayment?.status).toBe("PAID");
+
+    const duplicateWebhookRes = await app.inject({
+      method: "POST",
+      url: "/webhooks/razorpay/payments",
+      headers: {
+        "content-type": "application/json",
+        "x-razorpay-signature": createRazorpayWebhookSignature(rawWebhookPayload),
+        "x-razorpay-event-id": webhookEventId
+      },
+      payload: rawWebhookPayload
+    });
+
+    expect(duplicateWebhookRes.statusCode).toBe(200);
+    expect(duplicateWebhookRes.json().data.reason).toBe("duplicate_event");
+
+    const webhookEvent = await prisma.webhookEvent.findUnique({
+      where: {
+        provider_eventId: {
+          provider: "razorpay",
+          eventId: webhookEventId
+        }
+      }
+    });
+    expect(webhookEvent).toMatchObject({
+      eventType: "payment.captured",
+      status: "PROCESSED",
+      resourceType: "Payment"
+    });
+  });
+
+  it("should let tenant notify owner about offline rent payment", async () => {
+    const rentEntry = await prisma.rentEntry.create({
+      data: {
+        tenantId,
+        billingMonth: "2024-06",
+        dueDate: new Date("2024-06-05T00:00:00.000Z"),
+        amountDue: 1000000,
+        amountPaid: 0,
+        status: "UNPAID"
+      }
+    });
+
+    const notifyRes = await app.inject({
+      method: "POST",
+      url: "/tenant-portal/payments/offline",
+      headers: { authorization: `Bearer ${tenantToken}` },
+      payload: {
+        idempotencyKey: crypto.randomUUID(),
+        rentEntryId: rentEntry.id,
+        amount: 250000,
+        mode: "CASH",
+        note: "Paid to caretaker"
+      }
+    });
+
+    expect(notifyRes.statusCode).toBe(201);
+    expect(notifyRes.json().data).toMatchObject({
+      rentEntryId: rentEntry.id,
+      amount: 250000,
+      mode: "CASH"
+    });
+
+    const rentAfterNotify = await prisma.rentEntry.findUnique({ where: { id: rentEntry.id } });
+    expect(rentAfterNotify?.amountPaid).toBe(0);
+
+    const notification = await prisma.notification.findFirst({
+      where: {
+        category: "PAYMENT",
+        content: { contains: "cash payment" }
+      }
+    });
+    expect(notification?.title).toBe("Tenant payment update");
+
+    const claimId = notifyRes.json().data.claimId as string;
+    const claimsRes = await app.inject({
+      method: "GET",
+      url: `/properties/${propertyId}/payment-claims`,
+      headers: { authorization: `Bearer ${ownerToken}` }
+    });
+    expect(claimsRes.statusCode).toBe(200);
+    expect(claimsRes.json().data).toEqual(expect.arrayContaining([expect.objectContaining({ id: claimId, status: "PENDING" })]));
+
+    const approveRes = await app.inject({
+      method: "POST",
+      url: `/payment-claims/${claimId}/resolve`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: { decision: "APPROVE" }
+    });
+    expect(approveRes.statusCode).toBe(200);
+    expect(approveRes.json().data.status).toBe("APPROVED");
+    const rentAfterApproval = await prisma.rentEntry.findUnique({ where: { id: rentEntry.id } });
+    expect(rentAfterApproval?.amountPaid).toBe(250000);
+  });
+
+  it("should allow tenant to list and download their agreements", async () => {
+    if (!tenantToken) {
+      const auth = await createTenantAuth(tenantPhone);
+      tenantToken = auth.accessToken;
+    }
+
+    const agreementRes = await app.inject({
+      method: "POST",
+      url: `/tenants/${tenantId}/agreements`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {
+        startDate: "2024-05-01",
+        duration: "11 months",
+        customClauses: ["Tenant must follow property house rules."]
+      }
+    });
+
+    expect(agreementRes.statusCode).toBe(201);
+    const agreementId = (agreementRes.json() as { data: { id: string } }).data.id;
+
+    const listRes = await app.inject({
+      method: "GET",
+      url: `/tenants/${tenantId}/agreements`,
+      headers: { authorization: `Bearer ${tenantToken}` }
+    });
+
+    expect(listRes.statusCode).toBe(200);
+    expect((listRes.json() as { data: Array<{ id: string }> }).data).toEqual([
+      expect.objectContaining({ id: agreementId })
+    ]);
+
+    const downloadRes = await app.inject({
+      method: "GET",
+      url: `/agreements/${agreementId}/download`,
+      headers: { authorization: `Bearer ${tenantToken}` }
+    });
+
+    expect(downloadRes.statusCode).toBe(200);
+    expect(downloadRes.headers["content-type"]).toContain("application/pdf");
+  });
+
   it("should allow tenant to create and fetch maintenance requests", async () => {
     const createRes = await app.inject({
       method: "POST",
@@ -249,7 +457,7 @@ describe("Tenant Flow Integration", () => {
     // End tenant's notice early to trigger vacancy
     await prisma.tenant.update({
       where: { id: tenantId },
-      data: { vacatedAt: new Date(Date.now() - 86400000), status: "NOTICE" }
+      data: { expectedVacateDate: new Date(Date.now() - 86400000), status: "NOTICE" }
     });
 
     const syncRes = await app.inject({

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { useRequireRole } from "@/contexts/AuthContext";
+import { useRequireRoles } from "@/contexts/AuthContext";
 import { useProperty } from "@/lib/PropertyContext";
 import { useApi } from "@/lib/useApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,9 +12,10 @@ import { Input } from "@/components/ui/input";
 import { formatPaisa } from "@/lib/format";
 import { Loader2, FileText, Plus, Download } from "lucide-react";
 import type { TenantDto } from "@tenantease/types";
+import { fetchApi, openApiBlob } from "@/lib/api-client";
 
 export default function AgreementsPage() {
-  const { authorized } = useRequireRole("OWNER");
+  const { authorized } = useRequireRoles(["OWNER", "STAFF"]);
   const { activeProperty } = useProperty();
 
   const [selectedTenant, setSelectedTenant] = useState("");
@@ -42,15 +43,8 @@ export default function AgreementsPage() {
     setResult(null);
 
     try {
-      const token = localStorage.getItem("te_access_token");
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/tenants/${selectedTenant}/agreements`,
-        {
+      const generated = await fetchApi(`/tenants/${selectedTenant}/agreements`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
           body: JSON.stringify({
             templateType,
             state: stateName || undefined,
@@ -61,30 +55,20 @@ export default function AgreementsPage() {
               .split("\n")
               .map((c) => c.trim())
               .filter(Boolean),
-          }),
-        }
-      );
-      const json = await res.json();
-      if (json.success) {
-        setResult(json.data);
-        setShowForm(false);
-        refetch();
-      } else {
-        setResult({ error: json.error?.message || "Generation failed" });
-      }
-    } catch {
-      setResult({ error: "Network error" });
+          })
+      });
+      setResult(generated);
+      setShowForm(false);
+      refetch();
+    } catch (error) {
+      setResult({ error: error instanceof Error ? error.message : "Generation failed" });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDownload = (agreementId: string) => {
-    const token = localStorage.getItem("te_access_token");
-    window.open(
-      `${process.env.NEXT_PUBLIC_API_URL}/agreements/${agreementId}/download`,
-      "_blank"
-    );
+  const handleDownload = async (agreementId: string) => {
+    await openApiBlob(`/agreements/${agreementId}/download`, `agreement-${agreementId}.pdf`);
   };
 
   if (!authorized) return null;
@@ -114,10 +98,11 @@ export default function AgreementsPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <label htmlFor="agreement-tenant" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Select Tenant
               </label>
               <select
+                id="agreement-tenant"
                 value={selectedTenant}
                 onChange={(e) => setSelectedTenant(e.target.value)}
                 className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
@@ -149,10 +134,11 @@ export default function AgreementsPage() {
             <CardContent>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <label htmlFor="agreement-template" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Template
                   </label>
                   <select
+                    id="agreement-template"
                     value={templateType}
                     onChange={(e) => setTemplateType(e.target.value)}
                     className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
@@ -164,8 +150,9 @@ export default function AgreementsPage() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">State</label>
+                  <label htmlFor="agreement-state" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">State</label>
                   <Input
+                    id="agreement-state"
                     placeholder="e.g. Karnataka"
                     value={stateName}
                     onChange={(e) => setStateName(e.target.value)}
@@ -174,8 +161,9 @@ export default function AgreementsPage() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Start Date</label>
+                  <label htmlFor="agreement-start" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Start Date</label>
                   <Input
+                    id="agreement-start"
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
@@ -184,8 +172,9 @@ export default function AgreementsPage() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">End Date</label>
+                  <label htmlFor="agreement-end" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">End Date</label>
                   <Input
+                    id="agreement-end"
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
@@ -194,8 +183,9 @@ export default function AgreementsPage() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Duration</label>
+                  <label htmlFor="agreement-duration" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Duration</label>
                   <Input
+                    id="agreement-duration"
                     placeholder="e.g. 11 months"
                     value={duration}
                     onChange={(e) => setDuration(e.target.value)}
@@ -205,10 +195,11 @@ export default function AgreementsPage() {
               </div>
 
               <div className="mt-4 flex flex-col gap-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <label htmlFor="agreement-clauses" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Custom Clauses (one per line)
                 </label>
                 <textarea
+                  id="agreement-clauses"
                   rows={4}
                   value={customClauses}
                   onChange={(e) => setCustomClauses(e.target.value)}

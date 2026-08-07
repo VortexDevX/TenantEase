@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchApi } from "@/lib/api-client";
 import { Loader2, X, AlertCircle } from "lucide-react";
+import { useAccessibleDialog } from "@/lib/useAccessibleDialog";
 
 interface Props {
   propertyId: string;
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function AnnouncementModal({ propertyId, onClose, onSuccess }: Props) {
+  const dialogRef = useAccessibleDialog(onClose);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,11 +55,11 @@ export function AnnouncementModal({ propertyId, onClose, onSuccess }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in overflow-y-auto">
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="announcement-dialog-title" tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in overflow-y-auto">
       <div className="bg-card w-full max-w-lg rounded-2xl shadow-float border border-border overflow-hidden animate-slide-up my-auto">
         <div className="flex justify-between items-center p-4 border-b border-border bg-secondary/30">
-           <h2 className="font-bold text-lg text-foreground tracking-tight">Post Announcement</h2>
-           <button onClick={onClose} className="p-1.5 text-muted-foreground hover:bg-background rounded-full transition-colors">
+           <h2 id="announcement-dialog-title" className="font-bold text-lg text-foreground tracking-tight">Post Announcement</h2>
+           <button type="button" aria-label="Close announcement dialog" onClick={onClose} className="p-1.5 text-muted-foreground hover:bg-background rounded-full transition-colors">
               <X size={18} />
            </button>
         </div>
@@ -70,8 +72,9 @@ export function AnnouncementModal({ propertyId, onClose, onSuccess }: Props) {
            )}
 
            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-semibold">Title</label>
+              <label htmlFor="announcement-title" className="text-sm font-semibold">Title</label>
               <Input 
+                id="announcement-title"
                 required 
                 value={formData.title} 
                 onChange={e => setFormData({...formData, title: e.target.value})} 
@@ -81,8 +84,9 @@ export function AnnouncementModal({ propertyId, onClose, onSuccess }: Props) {
            </div>
            
            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-semibold">Message Content</label>
+              <label htmlFor="announcement-content" className="text-sm font-semibold">Message Content</label>
               <textarea 
+                id="announcement-content"
                 required 
                 className="flex min-h-[120px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 resize-y"
                 value={formData.content} 
@@ -94,8 +98,9 @@ export function AnnouncementModal({ propertyId, onClose, onSuccess }: Props) {
 
            <div className="grid grid-cols-2 gap-4 bg-secondary/10 p-4 rounded-xl border border-border">
               <div className="flex flex-col gap-1.5">
-                 <label className="text-sm font-semibold">Category</label>
+                 <label htmlFor="announcement-category" className="text-sm font-semibold">Category</label>
                  <select 
+                   id="announcement-category"
                    className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                    value={formData.category} 
                    onChange={e => setFormData({...formData, category: e.target.value})}
@@ -108,8 +113,9 @@ export function AnnouncementModal({ propertyId, onClose, onSuccess }: Props) {
                  </select>
               </div>
               <div className="flex flex-col gap-1.5">
-                 <label className="text-sm font-semibold">Target Floor (Optional)</label>
+                 <label htmlFor="announcement-floor" className="text-sm font-semibold">Target Floor (Optional)</label>
                  <Input 
+                   id="announcement-floor"
                    type="number" 
                    value={formData.targetFloor} 
                    onChange={e => setFormData({...formData, targetFloor: e.target.value})} 

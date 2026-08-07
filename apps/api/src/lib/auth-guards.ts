@@ -6,6 +6,7 @@ type StaffRole = "MANAGER" | "ACCOUNTANT" | "WARDEN";
 
 export type StaffPermission =
   | "property:read"
+  | "property:write"
   | "room:read"
   | "room:write"
   | "tenant:read"
@@ -16,6 +17,16 @@ export type StaffPermission =
   | "payment:write"
   | "receipt:read"
   | "receipt:write"
+  | "document:read"
+  | "document:write"
+  | "agreement:read"
+  | "agreement:write"
+  | "announcement:read"
+  | "announcement:write"
+  | "reminder:read"
+  | "reminder:write"
+  | "utility:read"
+  | "utility:write"
   | "maintenance:read"
   | "maintenance:write"
   | "report:read";
@@ -23,6 +34,7 @@ export type StaffPermission =
 const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<StaffPermission>> = {
   MANAGER: new Set([
     "property:read",
+    "property:write",
     "room:read",
     "room:write",
     "tenant:read",
@@ -31,6 +43,16 @@ const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<StaffPermission>> = {
     "rent:write",
     "payment:read",
     "payment:write",
+    "document:read",
+    "document:write",
+    "agreement:read",
+    "agreement:write",
+    "announcement:read",
+    "announcement:write",
+    "reminder:read",
+    "reminder:write",
+    "utility:read",
+    "utility:write",
     "maintenance:read",
     "maintenance:write"
   ]),
@@ -43,6 +65,12 @@ const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<StaffPermission>> = {
     "payment:write",
     "receipt:read",
     "receipt:write",
+    "agreement:read",
+    "announcement:read",
+    "reminder:read",
+    "reminder:write",
+    "utility:read",
+    "utility:write",
     "report:read"
   ]),
   WARDEN: new Set([
@@ -51,6 +79,12 @@ const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<StaffPermission>> = {
     "room:write",
     "tenant:read",
     "tenant:write",
+    "document:read",
+    "document:write",
+    "agreement:read",
+    "announcement:read",
+    "announcement:write",
+    "utility:read",
     "maintenance:read",
     "maintenance:write"
   ])

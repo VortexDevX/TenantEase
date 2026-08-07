@@ -265,17 +265,16 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
     );
   }
 
-  return (
-    <div className="flex flex-col gap-5 animate-fade-in">
-      <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+  return (    <div className="flex flex-col gap-5 animate-fade-in pb-10">
+      <section className="rounded-xl border border-rose-500/20 bg-rose-500/[0.02] p-5 shadow-glass-rose">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
-                <ShieldAlert className="h-6 w-6" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                <ShieldAlert className="h-6 w-6 animate-pulse" />
               </div>
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-destructive">Admin console</p>
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-rose-500">Admin console</p>
                 <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground md:text-3xl">Users, Roles, And Access</h1>
               </div>
             </div>
@@ -284,7 +283,7 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
             </p>
           </div>
 
-          <Button variant="outline" onClick={refetch} disabled={loading} className="gap-2">
+          <Button variant="outline" onClick={refetch} disabled={loading} className="gap-2 border-white/[0.08] hover:bg-white/[0.04]">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Refresh
           </Button>
@@ -292,49 +291,49 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
       </section>
 
       <section className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-        <Card className="border-border/80">
+        <Card className="border-white/[0.06] bg-white/[0.02]">
           <CardContent className="grid gap-3 p-4 md:grid-cols-3">
-            <div className="rounded-lg border border-border bg-secondary/20 p-4">
-              <div className="flex items-center gap-2 text-sm font-bold text-foreground">
-                <Lock className="h-4 w-4 text-destructive" />
+            <div className="rounded-lg border border-rose-500/10 bg-rose-500/[0.02] p-4">
+              <div className="flex items-center gap-2 text-sm font-bold text-rose-400">
+                <Lock className="h-4 w-4 text-rose-500" />
                 Admin guard
               </div>
               <p className="mt-2 text-xs font-medium text-muted-foreground">Admins cannot demote, block, or delete other admins from UI/API.</p>
             </div>
-            <div className="rounded-lg border border-border bg-secondary/20 p-4">
-              <div className="flex items-center gap-2 text-sm font-bold text-foreground">
+            <div className="rounded-lg border border-white/[0.08] bg-white/[0.01] p-4">
+              <div className="flex items-center gap-2 text-sm font-bold text-primary">
                 <BriefcaseBusiness className="h-4 w-4 text-primary" />
                 Business data
               </div>
               <p className="mt-2 text-xs font-medium text-muted-foreground">Users with properties or tenant records can be blocked, not deleted.</p>
             </div>
-            <div className="rounded-lg border border-border bg-secondary/20 p-4">
-              <div className="flex items-center gap-2 text-sm font-bold text-foreground">
+            <div className="rounded-lg border border-success/10 bg-success-soft/5 p-4">
+              <div className="flex items-center gap-2 text-sm font-bold text-success">
                 <Database className="h-4 w-4 text-success" />
                 DB editor
               </div>
-              <code className="mt-2 block rounded-md bg-background px-2 py-1 text-[11px] font-semibold text-foreground">corepack pnpm db:studio</code>
+              <code className="mt-2 block rounded-md bg-white/[0.04] border border-white/[0.06] px-2 py-1 text-[11px] font-semibold text-foreground">corepack pnpm db:studio</code>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-border/80">
+        <Card className="border-white/[0.06] bg-white/[0.02]">
           <CardContent className="p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">Recent audit</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{auditData?.total ?? 0} total events</p>
               </div>
-              <Activity className="h-5 w-5 text-muted-foreground" />
+              <Activity className="h-5 w-5 text-muted-foreground opacity-60" />
             </div>
             <div className="mt-3 flex max-h-44 flex-col gap-2 overflow-auto pr-1">
               {auditLoading ? (
                 <div className="flex h-20 items-center justify-center">
-                  <Loader2 className="h-5 w-5 animate-spin text-destructive" />
+                  <Loader2 className="h-5 w-5 animate-spin text-rose-500" />
                 </div>
               ) : auditData?.items.length ? (
                 auditData.items.map((item) => (
-                  <div key={item.id} className="rounded-lg border border-border bg-secondary/20 p-3">
+                  <div key={item.id} className="rounded-lg border border-white/[0.06] bg-white/[0.01] p-3 hover:bg-white/[0.02] transition-colors">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-xs font-bold text-foreground">{item.action}</p>
                       <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
@@ -356,68 +355,68 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
       </section>
 
       <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Card className="border-border/80">
+        <Card className="border-white/[0.06] bg-white/[0.02] shadow-glass">
           <CardContent className="flex items-center justify-between p-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Total</p>
-              <p className="mt-2 text-3xl font-bold">{summary.total}</p>
+              <p className="mt-2 text-3xl font-black tracking-tight">{summary.total}</p>
             </div>
-            <Users className="h-5 w-5 text-muted-foreground" />
+            <Users className="h-5 w-5 text-muted-foreground opacity-55" />
           </CardContent>
         </Card>
-        <Card className="border-border/80">
+        <Card className="border-white/[0.06] bg-white/[0.02] shadow-glass">
           <CardContent className="flex items-center justify-between p-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Admins</p>
-              <p className="mt-2 text-3xl font-bold">{summary.admins}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rose-500">Admins</p>
+              <p className="mt-2 text-3xl font-black tracking-tight text-rose-500">{summary.admins}</p>
             </div>
-            <Shield className="h-5 w-5 text-destructive" />
+            <Shield className="h-5 w-5 text-rose-500 opacity-70" />
           </CardContent>
         </Card>
-        <Card className="border-border/80">
+        <Card className="border-white/[0.06] bg-white/[0.02] shadow-glass">
           <CardContent className="flex items-center justify-between p-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Owners</p>
-              <p className="mt-2 text-3xl font-bold">{summary.owners}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Owners</p>
+              <p className="mt-2 text-3xl font-black tracking-tight text-primary">{summary.owners}</p>
             </div>
-            <BriefcaseBusiness className="h-5 w-5 text-primary" />
+            <BriefcaseBusiness className="h-5 w-5 text-primary opacity-70" />
           </CardContent>
         </Card>
-        <Card className="border-border/80">
+        <Card className="border-white/[0.06] bg-white/[0.02] shadow-glass">
           <CardContent className="flex items-center justify-between p-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Tenants</p>
-              <p className="mt-2 text-3xl font-bold">{summary.tenants}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-success">Tenants</p>
+              <p className="mt-2 text-3xl font-black tracking-tight text-success">{summary.tenants}</p>
             </div>
-            <User className="h-5 w-5 text-success" />
+            <User className="h-5 w-5 text-success opacity-70" />
           </CardContent>
         </Card>
-        <Card className="border-border/80">
+        <Card className="border-white/[0.06] bg-white/[0.02] shadow-glass">
           <CardContent className="flex items-center justify-between p-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Staff</p>
-              <p className="mt-2 text-3xl font-bold">{summary.staff}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-warning">Staff</p>
+              <p className="mt-2 text-3xl font-black tracking-tight text-warning">{summary.staff}</p>
             </div>
-            <UserCog className="h-5 w-5 text-warning" />
+            <UserCog className="h-5 w-5 text-warning opacity-70" />
           </CardContent>
         </Card>
-        <Card className="border-border/80">
+        <Card className="border-white/[0.06] bg-white/[0.02] shadow-glass">
           <CardContent className="flex items-center justify-between p-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Blocked</p>
-              <p className="mt-2 text-3xl font-bold">{summary.blocked}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rose-600">Blocked</p>
+              <p className="mt-2 text-3xl font-black tracking-tight text-rose-600">{summary.blocked}</p>
             </div>
-            <Ban className="h-5 w-5 text-destructive" />
+            <Ban className="h-5 w-5 text-rose-600 opacity-70" />
           </CardContent>
         </Card>
       </section>
 
       {(error || operationError || operationSuccess) && (
         <section
-          className={`rounded-lg border p-4 text-sm font-medium ${
+          className={`rounded-lg border p-4 text-sm font-semibold ${
             operationSuccess
-              ? "border-success/20 bg-success/10 text-success"
-              : "border-destructive/20 bg-destructive/10 text-destructive"
+              ? "border-success/20 bg-success-soft/10 text-success shadow-glass-success"
+              : "border-destructive/20 bg-destructive-soft/10 text-destructive shadow-glass-error"
           }`}
         >
           <div className="flex items-start gap-2">
@@ -427,15 +426,15 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
         </section>
       )}
 
-      <Card className="overflow-hidden border-border/80 shadow-float">
-        <div className="border-b border-border bg-secondary/30 p-4">
+      <Card className="overflow-hidden border-white/[0.06] bg-white/[0.02] shadow-glass">
+        <div className="border-b border-white/[0.04] bg-white/[0.01] p-4">
           <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto] lg:items-end">
             <div>
               <label htmlFor="admin-user-search" className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
                 Search directory
               </label>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground opacity-60" />
                 <Input
                   id="admin-user-search"
                   value={query}
@@ -454,10 +453,10 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
                 id="admin-role-filter"
                 value={roleFilter}
                 onChange={(event) => setRoleFilter(event.target.value as RoleFilter)}
-                className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm font-semibold text-foreground outline-none focus:border-primary lg:w-40"
+                className="h-11 w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 text-sm font-semibold text-foreground outline-none focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50 lg:w-40"
               >
                 {roleFilters.map((role) => (
-                  <option key={role} value={role}>
+                  <option key={role} value={role} className="bg-background">
                     {role === "ALL" ? "All roles" : role}
                   </option>
                 ))}
@@ -472,10 +471,10 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
                 id="admin-status-filter"
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-                className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm font-semibold text-foreground outline-none focus:border-primary lg:w-44"
+                className="h-11 w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 text-sm font-semibold text-foreground outline-none focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50 lg:w-44"
               >
                 {statusFilters.map((status) => (
-                  <option key={status} value={status}>
+                  <option key={status} value={status} className="bg-background">
                     {status === "ALL" ? "All users" : status === "LINKED" ? "Has data" : status}
                   </option>
                 ))}
@@ -487,12 +486,12 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
         <CardContent className="p-0">
           {loading ? (
             <div className="flex h-56 items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-destructive" />
+              <Loader2 className="h-8 w-8 animate-spin text-rose-500" />
             </div>
           ) : filteredUsers.length ? (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[980px] border-collapse text-left text-sm">
-                <thead className="border-b border-border bg-card">
+                <thead className="border-b border-white/[0.04] bg-white/[0.01]">
                   <tr className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
                     <th className="px-4 py-3">Account</th>
                     <th className="px-4 py-3">Role</th>
@@ -501,47 +500,47 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="divide-y divide-white/[0.04] bg-white/[0.01]">
                   {filteredUsers.map((user) => {
                     const linked = hasLinkedData(user);
                     const busy = updating === user.id;
                     const protectedAdmin = isProtectedAdmin(user, currentUserId);
                     const self = user.id === currentUserId;
                     return (
-                      <tr key={user.id} className="bg-card transition-colors hover:bg-secondary/30">
+                      <tr key={user.id} className="transition-colors hover:bg-white/[0.02]">
                         <td className="px-4 py-4 align-top">
                           <div className="flex items-start gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/[0.04] text-muted-foreground border border-white/[0.08]">
                               <UserCog className="h-5 w-5" />
                             </div>
                             <div>
                               <p className="font-bold tracking-tight text-foreground">{user.phone}</p>
                               <p className="mt-1 text-xs font-medium text-muted-foreground">{describeUser(user)}</p>
                               {user.isBlocked ? (
-                                <p className="mt-1 text-xs font-semibold text-destructive">Blocked on {formatDate(user.blockedAt)}</p>
+                                <p className="mt-1 text-xs font-semibold text-rose-500">Blocked on {formatDate(user.blockedAt)}</p>
                               ) : null}
                               <div className="mt-2 flex flex-wrap gap-1">
-                                {self ? <Badge variant="outline">You</Badge> : null}
-                                {protectedAdmin ? <Badge variant="destructive">Protected admin</Badge> : null}
+                                {self ? <Badge variant="outline" className="border-rose-500/20 text-rose-400 bg-rose-500/5">You</Badge> : null}
+                                {protectedAdmin ? <Badge variant="destructive" className="bg-rose-500/25 border-rose-500/40 text-rose-200">Protected admin</Badge> : null}
                               </div>
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-4 align-top">
-                          <Badge variant={roleBadgeVariant(user.role, user.isBlocked)} className="gap-1">
+                          <Badge variant={roleBadgeVariant(user.role, user.isBlocked)} className={`gap-1 ${user.isBlocked ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : ''}`}>
                             {user.role === "ADMIN" ? <ShieldCheck className="h-3 w-3" /> : null}
                             {user.isBlocked ? "BLOCKED" : user.role}
                           </Badge>
                         </td>
                         <td className="px-4 py-4 align-top">
                           <div className="flex flex-wrap gap-2">
-                            <Badge variant={user.ownerProfile?.propertyCount ? "default" : "outline"}>
+                            <Badge variant={user.ownerProfile?.propertyCount ? "default" : "outline"} className={user.ownerProfile?.propertyCount ? 'bg-primary/20 text-primary-strong border-primary/30' : 'border-white/[0.08]'}>
                               {user.ownerProfile?.propertyCount ?? 0} properties
                             </Badge>
-                            <Badge variant={user.tenantRecordCount ? "success" : "outline"}>
+                            <Badge variant={user.tenantRecordCount ? "success" : "outline"} className={user.tenantRecordCount ? 'bg-success-soft/20 text-success border-success/30' : 'border-white/[0.08]'}>
                               {user.tenantRecordCount} tenant records
                             </Badge>
-                            <Badge variant={user.staffAssignmentCount ? "warning" : "outline"}>
+                            <Badge variant={user.staffAssignmentCount ? "warning" : "outline"} className={user.staffAssignmentCount ? 'bg-warning-soft/20 text-warning border-warning/30' : 'border-white/[0.08]'}>
                               {user.staffAssignmentCount} staff links
                             </Badge>
                           </div>
@@ -562,6 +561,7 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
                                 }
                                 title={protectedAdmin ? "Other admin accounts are protected" : undefined}
                                 onClick={() => handleRoleChange(user, roleOption)}
+                                className={`border-white/[0.06] hover:bg-white/[0.04] text-xs h-8 ${user.role === roleOption ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : ''}`}
                               >
                                 {roleOption}
                               </Button>
@@ -572,7 +572,7 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
                               disabled={busy || user.role === "ADMIN"}
                               onClick={() => handleBlockToggle(user)}
                               title={user.role === "ADMIN" ? "Admin accounts are protected from block actions" : undefined}
-                              className="gap-1"
+                              className="gap-1 text-xs h-8"
                             >
                               {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Ban className="h-3 w-3" />}
                               {user.isBlocked ? "Unblock" : "Block"}
@@ -589,7 +589,7 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
                                     ? "Block users with linked property, tenant, or staff data instead"
                                     : "Delete empty account"
                               }
-                              className="gap-1 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              className="gap-1 text-xs h-8 border-rose-500/30 text-rose-400 hover:bg-rose-500/10 hover:text-rose-400"
                             >
                               <Trash2 className="h-3 w-3" />
                               Delete

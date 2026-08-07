@@ -1,9 +1,26 @@
 import { FastifyInstance } from "fastify";
-import { assertPropertyAccess, requireOwnerProfileId } from "../../lib/auth-guards.js";
+import { assertPropertyAccess } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
-import { assertPropertyOwnership } from "../common/owner.js";
+import { parseRentCharges, replaceRentCharge, sumRentCharges } from "../rent/charges.js";
+import { computeRentStatus } from "../rent/service.js";
+import { generateReceipt } from "../receipts/service.js";
+import { z } from "zod";
+
+const currentYear = new Date().getFullYear();
+const monthQuerySchema = z.object({
+  month: z.coerce.number().int().min(1).max(12).default(new Date().getMonth() + 1),
+  year: z.coerce.number().int().min(2000).max(currentYear + 5).default(currentYear)
+});
+const financialYearQuerySchema = z.object({
+  fy: z.coerce.number().int().min(2000).max(currentYear + 5).default(new Date().getMonth() >= 3 ? currentYear : currentYear - 1)
+});
+
+function csvCell(value: string) {
+  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return `"${safe.replaceAll('"', '""')}"`;
+}
 
 export async function reportsRoutes(app: FastifyInstance) {
 
@@ -11,12 +28,11 @@ export async function reportsRoutes(app: FastifyInstance) {
   // Monthly financial report with income, payments breakdown, occupancy, P&L
   app.get("/properties/:propertyId/reports/monthly", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
-    const query = request.query as Record<string, string>;
+    const query = monthQuerySchema.parse(request.query);
     await assertPropertyAccess(request, propertyId, "report:read");
 
     const now = new Date();
-    const month = query.month ? parseInt(query.month, 10) : now.getMonth() + 1;
-    const year = query.year ? parseInt(query.year, 10) : now.getFullYear();
+    const { month, year } = query;
     const billingMonth = `${year}-${String(month).padStart(2, "0")}`;
 
     const property = await prisma.property.findUnique({ where: { id: propertyId } });
@@ -94,12 +110,10 @@ export async function reportsRoutes(app: FastifyInstance) {
   // Generate receipts for all paid entries that don't have receipts yet
   app.post("/properties/:propertyId/receipts/bulk", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
-    const query = request.query as Record<string, string>;
-    await assertPropertyAccess(request, propertyId, "receipt:write");
+    const query = monthQuerySchema.parse(request.query);
+    const { ownerProfileId } = await assertPropertyAccess(request, propertyId, "receipt:write");
 
-    const now = new Date();
-    const month = query.month ? parseInt(query.month, 10) : now.getMonth() + 1;
-    const year = query.year ? parseInt(query.year, 10) : now.getFullYear();
+    const { month, year } = query;
     const billingMonth = `${year}-${String(month).padStart(2, "0")}`;
 
     const property = await prisma.property.findUnique({ where: { id: propertyId } });
@@ -108,7 +122,6 @@ export async function reportsRoutes(app: FastifyInstance) {
     const tenants = await prisma.tenant.findMany({ where: { propertyId } });
     const tenantIds = tenants.map((t) => t.id);
 
-    // Find all payments in this billing month that don't have receipts
     const payments = await prisma.payment.findMany({
       where: {
         rentEntry: { tenantId: { in: tenantIds }, billingMonth },
@@ -120,23 +133,15 @@ export async function reportsRoutes(app: FastifyInstance) {
       include: { rentEntry: { include: { tenant: true } } },
     });
 
-    const generated: Array<{ tenantName: string; receiptNumber: string; amount: number }> = [];
+    const generated: Array<{ tenantName: string; receiptNumber: string; receiptId: string; amount: number }> = [];
 
     for (const payment of payments) {
-      const receiptNumber = `TE-${year}-${String(month).padStart(2, "0")}-${String(generated.length + 1).padStart(5, "0")}`;
-      
-      await prisma.receipt.create({
-        data: {
-          paymentId: payment.id,
-          receiptNumber,
-          filePath: `/storage/receipts/${receiptNumber}.pdf`,
-          generatedAt: new Date(),
-        },
-      });
+      const receipt = await generateReceipt(payment.id, ownerProfileId);
 
       generated.push({
         tenantName: payment.rentEntry.tenant.fullName,
-        receiptNumber,
+        receiptNumber: receipt.receiptNumber,
+        receiptId: receipt.id,
         amount: payment.amount,
       });
     }
@@ -151,10 +156,10 @@ export async function reportsRoutes(app: FastifyInstance) {
   // Annual receipt summary for FY (April-March)
   app.get("/properties/:propertyId/receipts/annual", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
-    const query = request.query as Record<string, string>;
+    const query = financialYearQuerySchema.parse(request.query);
     await assertPropertyAccess(request, propertyId, "receipt:read");
 
-    const fy = query.fy ? parseInt(query.fy, 10) : (new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1);
+    const { fy } = query;
     // FY = April <fy> to March <fy+1>
     const startMonth = `${fy}-04`;
     const endMonth = `${fy + 1}-03`;
@@ -209,14 +214,90 @@ export async function reportsRoutes(app: FastifyInstance) {
     }));
   });
 
+  app.get("/properties/:propertyId/reports/annual", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
+    const { propertyId } = request.params as { propertyId: string };
+    const query = financialYearQuerySchema.parse(request.query);
+    await assertPropertyAccess(request, propertyId, "report:read");
+
+    const { fy } = query;
+    const startMonth = `${fy}-04`;
+    const endMonth = `${fy + 1}-03`;
+    const tenants = await prisma.tenant.findMany({ where: { propertyId } });
+    const tenantIds = tenants.map((t) => t.id);
+    const entries = await prisma.rentEntry.findMany({
+      where: { tenantId: { in: tenantIds }, billingMonth: { gte: startMonth, lte: endMonth } },
+      include: { payments: { where: { isVoided: false } } },
+      orderBy: { billingMonth: "asc" }
+    });
+
+    const months = new Map<string, { expected: number; collected: number; outstanding: number }>();
+    for (const entry of entries) {
+      const current = months.get(entry.billingMonth) ?? { expected: 0, collected: 0, outstanding: 0 };
+      current.expected += entry.amountDue;
+      current.collected += entry.amountPaid;
+      current.outstanding += entry.amountDue - entry.amountPaid;
+      months.set(entry.billingMonth, current);
+    }
+
+    const monthly = Array.from(months.entries()).map(([billingMonth, values]) => ({ billingMonth, ...values }));
+    return reply.send(ok({
+      financialYear: `FY ${fy}-${fy + 1}`,
+      monthly,
+      totals: monthly.reduce((acc, item) => ({
+        expected: acc.expected + item.expected,
+        collected: acc.collected + item.collected,
+        outstanding: acc.outstanding + item.outstanding
+      }), { expected: 0, collected: 0, outstanding: 0 })
+    }));
+  });
+
+  app.get("/properties/:propertyId/reports/monthly/export", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
+    const { propertyId } = request.params as { propertyId: string };
+    const query = monthQuerySchema.parse(request.query);
+    await assertPropertyAccess(request, propertyId, "report:read");
+
+    const { month, year } = query;
+    const billingMonth = `${year}-${String(month).padStart(2, "0")}`;
+    const tenants = await prisma.tenant.findMany({ where: { propertyId } });
+    const rentEntries = await prisma.rentEntry.findMany({
+      where: { tenantId: { in: tenants.map((tenant) => tenant.id) }, billingMonth },
+      include: { tenant: { include: { room: true } } },
+      orderBy: { dueDate: "asc" }
+    });
+
+    const rows = [
+      ["Tenant", "Room", "Billing Month", "Amount Due", "Amount Paid", "Balance", "Status"],
+      ...rentEntries.map((entry) => [
+        entry.tenant.fullName,
+        entry.tenant.room.roomNumber,
+        entry.billingMonth,
+        String(entry.amountDue),
+        String(entry.amountPaid),
+        String(entry.amountDue - entry.amountPaid),
+        entry.status
+      ])
+    ];
+    const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
+
+    return reply
+      .header("content-type", "text/csv")
+      .header("content-disposition", `attachment; filename="tenantease-${billingMonth}-report.csv"`)
+      .send(csv);
+  });
+
   // ─── POST /properties/:propertyId/late-fees/apply ───
   // Auto-calculate and apply late fees to overdue rent entries
-  app.post("/properties/:propertyId/late-fees/apply", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.post("/properties/:propertyId/late-fees/apply", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
-    await assertPropertyOwnership(propertyId, requireOwnerProfileId(request.user.ownerProfileId));
+    await assertPropertyAccess(request, propertyId, "rent:write");
 
-    const property = await prisma.property.findUnique({ where: { id: propertyId } });
+    const property = await prisma.property.findUnique({ where: { id: propertyId }, include: { settings: true } });
     if (!property) throw new AppError(404, "PROPERTY_NOT_FOUND", "Property not found");
+    const lateFeePerDay = property.settings?.lateFeePerDay ?? 0;
+    const graceDays = property.settings?.lateFeeGraceDays ?? 0;
+    if (lateFeePerDay <= 0) {
+      return reply.send(ok({ processed: 0, feesApplied: 0, details: [] }));
+    }
 
     const now = new Date();
     const tenants = await prisma.tenant.findMany({ where: { propertyId, status: "ACTIVE" } });
@@ -232,27 +313,30 @@ export async function reportsRoutes(app: FastifyInstance) {
       include: { tenant: { include: { room: true } } },
     });
 
-    // Default: ₹50/day late fee (5000 paisa) — configurable per property in future
-    const LATE_FEE_PER_DAY = 5000; // paisa
-    const GRACE_PERIOD_DAYS = 5;
-
     const applied: Array<{ tenant: string; room: string; daysLate: number; lateFee: number; newTotal: number }> = [];
 
     for (const entry of overdueEntries) {
       const daysLate = Math.floor((now.getTime() - new Date(entry.dueDate).getTime()) / 86400000);
-      if (daysLate <= GRACE_PERIOD_DAYS) continue;
+      if (daysLate <= graceDays) continue;
 
-      const effectiveDays = daysLate - GRACE_PERIOD_DAYS;
-      const lateFee = effectiveDays * LATE_FEE_PER_DAY;
-
-      // Only apply if not already marked overdue with a late fee factored in
-      const newAmountDue = entry.amountDue + lateFee;
+      const effectiveDays = daysLate - graceDays;
+      const lateFee = effectiveDays * lateFeePerDay;
+      const existingCharges = parseRentCharges(entry.utilityCharges);
+      const nextCharges = replaceRentCharge(existingCharges, {
+        sourceKey: `late_fee:${entry.billingMonth}`,
+        type: "LATE_FEE",
+        amount: lateFee,
+        details: `${effectiveDays} days late @ ₹${(lateFeePerDay / 100).toFixed(2)}/day`
+      });
+      const baseRent = entry.amountDue - sumRentCharges(existingCharges);
+      const newAmountDue = baseRent + sumRentCharges(nextCharges);
 
       await prisma.rentEntry.update({
         where: { id: entry.id },
         data: {
+          utilityCharges: nextCharges,
           amountDue: newAmountDue,
-          status: "OVERDUE",
+          status: computeRentStatus(newAmountDue, entry.amountPaid, entry.dueDate),
         },
       });
 

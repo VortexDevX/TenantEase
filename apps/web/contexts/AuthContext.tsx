@@ -34,7 +34,11 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = ["/login", "/register"];
+
+function isPublicPath(path: string) {
+  return PUBLIC_PATHS.includes(path) || path.startsWith("/pg/");
+}
 
 function roleHomePath(role: Role): string {
   switch (role) {
@@ -54,25 +58,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initAuth = async () => {
       const currentPath = pathname || (typeof window !== "undefined" ? window.location.pathname : "");
-      const token = localStorage.getItem("te_access_token");
-      if (PUBLIC_PATHS.includes(currentPath)) {
+      if (isPublicPath(currentPath)) {
         setIsLoading(false);
-        if (token) {
-          try {
-            const userData = await fetchApi<User>("/auth/me");
-            setUser(userData);
-            router.replace(roleHomePath(userData.role));
-          } catch {
-            clearAuthTokens();
-            setUser(null);
-          }
+        try {
+          const userData = await fetchApi<User>("/auth/me");
+          setUser(userData);
+          router.replace(roleHomePath(userData.role));
+        } catch {
+          clearAuthTokens();
+          setUser(null);
         }
-        return;
-      }
-
-      if (!token) {
-        setIsLoading(false);
-        router.replace("/login");
         return;
       }
 
@@ -80,7 +75,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const userData = await fetchApi<User>("/auth/me");
         setUser(userData);
 
-        if (userData.role === "OWNER" && !userData.displayName && currentPath !== "/onboarding") {
+        if (currentPath === "/onboarding" && userData.role !== "OWNER") {
+          router.replace(roleHomePath(userData.role));
+        } else if (currentPath === "/onboarding" && userData.role === "OWNER" && userData.displayName) {
+          router.replace("/");
+        } else if (userData.role === "OWNER" && !userData.displayName && currentPath !== "/onboarding") {
           router.replace("/onboarding");
         }
       } catch {
@@ -107,13 +106,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   const logout = useCallback(async () => {
-    const refreshToken = localStorage.getItem("te_refresh_token");
-    if (refreshToken) {
-      await fetchApi("/auth/logout", {
-        method: "POST",
-        body: JSON.stringify({ refreshToken })
-      }).catch(() => undefined);
-    }
+    await fetchApi("/auth/logout", {
+      method: "POST",
+      body: JSON.stringify({})
+    }).catch(() => undefined);
     clearAuthTokens();
     setUser(null);
     router.push("/login");
@@ -121,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const renderPath = pathname || (typeof window !== "undefined" ? window.location.pathname : "");
 
-  if (isLoading && !PUBLIC_PATHS.includes(renderPath)) {
+  if (isLoading && !isPublicPath(renderPath)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
@@ -158,5 +154,19 @@ export function useRequireRole(requiredRole: Role) {
     }
   }, [user, isLoading, requiredRole, router]);
 
-  return { authorized: !isLoading && user?.role === requiredRole, user };
+  return { authorized: !isLoading && user?.role === requiredRole, user, loading: isLoading };
+}
+
+export function useRequireRoles(requiredRoles: readonly Role[]) {
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+  const authorized = !isLoading && Boolean(user && requiredRoles.includes(user.role));
+
+  useEffect(() => {
+    if (!isLoading && user && !requiredRoles.includes(user.role)) {
+      router.replace(roleHomePath(user.role));
+    }
+  }, [user, isLoading, requiredRoles, router]);
+
+  return { authorized, user, loading: isLoading };
 }

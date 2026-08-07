@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 
 export function createOtpCode() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 export function hashValue(value: string, pepper: string) {
@@ -11,4 +11,3 @@ export function hashValue(value: string, pepper: string) {
 export function createToken() {
   return crypto.randomBytes(32).toString("hex");
 }
-

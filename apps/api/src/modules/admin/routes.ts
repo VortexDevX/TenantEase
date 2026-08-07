@@ -146,23 +146,38 @@ export async function adminRoutes(app: FastifyInstance) {
       throw new AppError(403, "AUTH_FORBIDDEN", "You cannot demote your own admin account");
     }
 
-    // If promoting to OWNER, create OwnerProfile if missing
-    if (body.role === "OWNER" && !user.ownerProfile) {
-      await prisma.$transaction([
-        prisma.user.update({
+    await prisma.$transaction(async (tx) => {
+      if (body.role !== "STAFF") {
+        await tx.staffAssignment.updateMany({
+          where: {
+            userId: id,
+            isActive: true,
+            inviteStatus: { not: "REVOKED" }
+          },
+          data: {
+            inviteStatus: "REVOKED",
+            isActive: false,
+            deactivatedAt: new Date()
+          }
+        });
+      }
+
+      if (body.role === "OWNER" && !user.ownerProfile) {
+        await tx.user.update({
           where: { id },
           data: { role: "OWNER" }
-        }),
-        prisma.ownerProfile.create({
+        });
+        await tx.ownerProfile.create({
           data: { userId: id }
-        })
-      ]);
-    } else {
-      await prisma.user.update({
+        });
+        return;
+      }
+
+      await tx.user.update({
         where: { id },
         data: { role: body.role }
       });
-    }
+    });
 
     await createAuditLog({
       userId: request.user.sub,

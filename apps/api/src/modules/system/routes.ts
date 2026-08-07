@@ -1,29 +1,14 @@
 import type { FastifyInstance } from "fastify";
-import { env } from "../../lib/env.js";
 import { prisma } from "../../lib/db.js";
-import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
 import { recalculateRoom } from "../tenants/service.js";
 import { createAuditLog } from "../common/audit.js";
-
-function systemSecret() {
-  if (env.CRON_SECRET) {
-    return env.CRON_SECRET;
-  }
-
-  if (env.NODE_ENV === "production") {
-    throw new AppError(500, "CONFIG_ERROR", "CRON_SECRET is required in production");
-  }
-
-  return "local_dev_cron_secret";
-}
+import { requireCronAuth } from "../../lib/cron-auth.js";
 
 export async function systemRoutes(app: FastifyInstance) {
   // Can be called automatically by a cron job or webhook
   app.post("/system/sync-occupancy", async (request) => {
-    if (request.headers.authorization !== `Bearer ${systemSecret()}`) {
-      throw new AppError(401, "AUTH_FORBIDDEN", "Unauthorized system access");
-    }
+    requireCronAuth(request.headers.authorization);
 
     const now = new Date();
     
@@ -31,7 +16,7 @@ export async function systemRoutes(app: FastifyInstance) {
     const toVacate = await prisma.tenant.findMany({
       where: {
         status: { in: ["ACTIVE", "NOTICE"] },
-        vacatedAt: { lte: now }
+        expectedVacateDate: { lte: now }
       }
     });
 
@@ -45,7 +30,7 @@ export async function systemRoutes(app: FastifyInstance) {
     for (const tenant of toVacate) {
       await prisma.tenant.update({
         where: { id: tenant.id },
-        data: { status: "VACATED" }
+        data: { status: "VACATED", vacatedAt: now, expectedVacateDate: null }
       });
       roomIds.add(tenant.roomId);
     }

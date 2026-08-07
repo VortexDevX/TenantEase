@@ -1,27 +1,15 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: tenantease-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: tenantease
-      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "55432:5432"
+      - "127.0.0.1:55432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  redis:
-    image: redis:7-alpine
-    container_name: tenantease-redis
-    restart: unless-stopped
-    ports:
-      - "56379:6379"
-    volumes:
-      - redis_data:/data
-
 volumes:
   postgres_data:
-  redis_data:

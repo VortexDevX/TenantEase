@@ -53,6 +53,12 @@ enum PaymentMode {
   ONLINE
 }
 
+enum OfflinePaymentClaimStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum MaintenanceCategory {
   PLUMBING
   ELECTRICAL
@@ -111,6 +117,21 @@ enum InvoiceStatus {
   VOID
 }
 
+enum OnlinePaymentOrderStatus {
+  CREATED
+  PAID
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
 enum StaffRole {
   MANAGER
   ACCOUNTANT
@@ -121,6 +142,18 @@ enum StaffInviteStatus {
   PENDING
   ACCEPTED
   REVOKED
+}
+
+enum TenantDocumentCategory {
+  KYC
+  PHOTO
+  OTHER
+}
+
+enum EnquiryStatus {
+  NEW
+  CONTACTED
+  CLOSED
 }
 
 model User {
@@ -168,6 +201,7 @@ model Subscription {
   currentPeriodStart     DateTime           @default(now())
   currentPeriodEnd       DateTime?
   razorpaySubscriptionId String?
+  pendingPlan            SubscriptionPlan?
   ownerProfile           OwnerProfile       @relation(fields: [ownerProfileId], references: [id], onDelete: Cascade)
   invoices               Invoice[]
   createdAt              DateTime           @default(now())
@@ -213,6 +247,7 @@ model Invoice {
   periodStart       DateTime
   periodEnd         DateTime
   razorpayPaymentId String?
+  razorpayInvoiceId String?        @unique
   subscription      Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
@@ -238,12 +273,15 @@ model Property {
   reminderConfig      ReminderConfig?
   maintenanceRequests MaintenanceRequest[]
   announcements       Announcement[]
+  listing             PropertyListing?
+  enquiries           Enquiry[]
   utilityReadings     UtilityReading[]
   agreements          Agreement[]
   reminderLogs        ReminderLog[]
   notifications       Notification[]
   roomTransfers       RoomTransferRecord[]
   vacateRecords       VacateRecord[]
+  offlinePaymentClaims OfflinePaymentClaim[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
@@ -311,9 +349,15 @@ model Tenant {
   fullName            String
   phone               String
   email               String?
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+  aadhaarLast4             String?
+  notes                    String?
   status              TenantStatus         @default(ACTIVE)
   moveInDate          DateTime
   noticeDate          DateTime?
+  expectedVacateDate  DateTime?
   vacatedAt           DateTime?
   monthlyRent         Int
   depositPaid         Int
@@ -326,13 +370,16 @@ model Tenant {
   agreements          Agreement[]
   reminderLogs        ReminderLog[]
   notifications       Notification[]
+  onlinePaymentOrders OnlinePaymentOrder[]
   roomTransfers       RoomTransferRecord[]
   vacateRecords       VacateRecord[]
+  offlinePaymentClaims OfflinePaymentClaim[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
   @@index([propertyId])
   @@index([roomId])
+  @@index([status, expectedVacateDate])
 }
 
 model TenantDocument {
@@ -341,6 +388,7 @@ model TenantDocument {
   fileName   String
   mimeType   String
   storageKey String
+  category   TenantDocumentCategory @default(KYC)
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
 
@@ -359,12 +407,80 @@ model RentEntry {
   tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   payments       Payment[]
   reminderLogs   ReminderLog[]
+  onlineOrders   OnlinePaymentOrder[]
+  offlinePaymentClaims OfflinePaymentClaim[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
   @@unique([tenantId, billingMonth])
   @@index([tenantId])
   @@index([billingMonth])
+}
+
+model OfflinePaymentClaim {
+  id              String                    @id @default(uuid())
+  idempotencyKey  String                    @unique
+  propertyId      String
+  tenantId        String
+  rentEntryId     String
+  amount          Int
+  mode            PaymentMode
+  referenceNumber String?
+  note            String?
+  status          OfflinePaymentClaimStatus @default(PENDING)
+  reviewedByUserId String?
+  reviewedAt      DateTime?
+  rejectionReason String?
+  property        Property                  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenant          Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rentEntry       RentEntry                 @relation(fields: [rentEntryId], references: [id], onDelete: Cascade)
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  @@index([propertyId, status, createdAt])
+  @@index([tenantId, createdAt])
+}
+
+model OnlinePaymentOrder {
+  id                String                   @id @default(uuid())
+  rentEntryId       String
+  tenantId          String
+  amount            Int
+  currency          String                   @default("INR")
+  status            OnlinePaymentOrderStatus @default(CREATED)
+  razorpayOrderId   String?                  @unique
+  razorpayPaymentId String?
+  razorpaySignature String?
+  providerPayload   Json?
+  expiresAt         DateTime?
+  paidAt            DateTime?
+  rentEntry         RentEntry                @relation(fields: [rentEntryId], references: [id], onDelete: Cascade)
+  tenant            Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  @@index([tenantId, status])
+  @@index([rentEntryId])
+  @@index([razorpayPaymentId])
+}
+
+model WebhookEvent {
+  id           String             @id @default(uuid())
+  provider     String
+  eventId      String
+  eventType    String
+  payloadHash  String
+  status       WebhookEventStatus @default(RECEIVED)
+  resourceType String?
+  resourceId   String?
+  error        String?
+  payload      Json?
+  receivedAt   DateTime           @default(now())
+  processedAt  DateTime?
+
+  @@unique([provider, eventId])
+  @@index([provider, eventType])
+  @@index([status, receivedAt])
 }
 
 model Payment {
@@ -374,6 +490,8 @@ model Payment {
   mode            PaymentMode
   paidAt          DateTime
   referenceNumber String?
+  providerPaymentId String?  @unique
+  idempotencyKey   String?  @unique
   note            String?
   isVoided        Boolean     @default(false)
   voidedAt        DateTime?
@@ -448,6 +566,7 @@ model ReminderLog {
   status      String
   message     String
   error       String?
+  dedupeKey   String?    @unique
   sentAt      DateTime   @default(now())
   property    Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -509,6 +628,7 @@ model VacateRecord {
   refundAmount    Int      @default(0)
   refundStatus    String   @default("pending")
   finalNotes      String?
+  settlementPdfPath String?
   tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   property        Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   room            Room     @relation(fields: [roomId], references: [id], onDelete: Restrict)
@@ -516,6 +636,45 @@ model VacateRecord {
 
   @@index([tenantId])
   @@index([propertyId])
+}
+
+model PropertyListing {
+  id           String    @id @default(uuid())
+  propertyId   String    @unique
+  slug         String    @unique
+  title        String
+  description  String?
+  contactPhone String?
+  isEnabled    Boolean   @default(false)
+  amenities    String[]  @default([])
+  photos       Json?
+  property     Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  enquiries    Enquiry[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([isEnabled])
+  @@map("property_listings")
+}
+
+model Enquiry {
+  id          String        @id @default(uuid())
+  propertyId  String
+  listingId   String?
+  name        String
+  phone       String
+  email       String?
+  message     String?
+  status      EnquiryStatus @default(NEW)
+  source      String        @default("public_listing")
+  property    Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  listing     PropertyListing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([propertyId, status])
+  @@index([phone, propertyId, createdAt])
+  @@map("enquiries")
 }
 
 model UtilityReading {

@@ -1,252 +1,387 @@
 "use client";
 
+import Link from "next/link";
+import {
+  AlertCircle,
+  Bell,
+  BedDouble,
+  Clock,
+  DoorClosed,
+  IndianRupee,
+  Loader2,
+  Plus,
+  ReceiptText,
+  UserPlus,
+  WalletCards
+} from "lucide-react";
+import type { NotificationDto, RentEntryDto, TenantDto } from "@tenantease/types";
+
+import { useAuth, useRequireRoles } from "@/contexts/AuthContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useProperty } from "@/lib/PropertyContext";
 import { useApi } from "@/lib/useApi";
-import { formatPaisa, formatPaisaShort, timeAgo } from "@/lib/format";
-import { BedDouble, DoorClosed, IndianRupee, AlertCircle, Clock, Loader2, ReceiptText, UserPlus, WalletCards } from "lucide-react";
-import Link from "next/link";
-import type { TenantDto, RentEntryDto } from "@tenantease/types";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { MetricCard } from "@/components/shared/MetricCard";
+import { MobileListCard } from "@/components/shared/MobileListCard";
+import { MoneyValue } from "@/components/shared/MoneyValue";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { QuickActionBar } from "@/components/shared/QuickActionBar";
+import { RentLedgerStrip } from "@/components/shared/RentLedgerStrip";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { fetchApi } from "@/lib/api-client";
 
 interface RentEntryWithName extends RentEntryDto {
   tenantName: string;
 }
 
-function DashboardContent() {
-  const { activeProperty, loading: propLoading } = useProperty();
-  const propertyId = activeProperty?.id;
+type DashboardStats = {
+  totalDue: number;
+  totalPaid: number;
+  overdueTotal: number;
+  collectionPct: number;
+  currentMonth: string;
+  currentMonthLabel: string;
+  recentPayments: RentEntryWithName[];
+  overdueEntries: RentEntryWithName[];
+  activeTenants: TenantDto[];
+  noticeTenants: TenantDto[];
+};
 
-  const { data: tenants, loading: tenantsLoading } = useApi<TenantDto[]>(
-    propertyId ? `/properties/${propertyId}/tenants?limit=100` : null
-  );
+type PaymentClaim = {
+  id: string;
+  tenantName: string;
+  billingMonth: string;
+  amount: number;
+  mode: string;
+  referenceNumber: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+};
 
-  const { data: rentEntries, loading: rentLoading } = useApi<RentEntryWithName[]>(
-    propertyId ? `/properties/${propertyId}/rent` : null
-  );
-
-  const loading = propLoading || tenantsLoading || rentLoading;
-
-  // Compute KPIs from real data
-  const occupiedBeds = activeProperty?.occupiedBeds ?? 0;
-  const vacantBeds = activeProperty?.vacantBeds ?? 0;
-
-  // Rent collection stats from rent entries for current month
+function getCurrentMonth() {
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const currentMonthEntries = rentEntries?.filter((e) => e.billingMonth === currentMonth) ?? [];
-  const totalDue = currentMonthEntries.reduce((s, e) => s + e.amountDue, 0);
-  const totalPaid = currentMonthEntries.reduce((s, e) => s + e.amountPaid, 0);
-  const collectionPct = totalDue > 0 ? Math.round((totalPaid / totalDue) * 100) : 0;
+  const currentMonthLabel = now.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  return { currentMonth, currentMonthLabel };
+}
 
-  // Overdue entries
-  const overdueEntries = rentEntries?.filter((e) => e.status === "OVERDUE") ?? [];
-  const overdueTotal = overdueEntries.reduce((s, e) => s + (e.amountDue - e.amountPaid), 0);
+function getDashboardStats(tenants: TenantDto[] = [], rentEntries: RentEntryWithName[] = []): DashboardStats {
+  const { currentMonth, currentMonthLabel } = getCurrentMonth();
+  const currentMonthEntries = rentEntries.filter((entry) => entry.billingMonth === currentMonth);
+  const totalDue = currentMonthEntries.reduce((sum, entry) => sum + entry.amountDue, 0);
+  const totalPaid = currentMonthEntries.reduce((sum, entry) => sum + entry.amountPaid, 0);
+  const overdueEntries = rentEntries.filter((entry) => entry.status === "OVERDUE");
 
-  // Active tenants on notice
-  const activeTenants = tenants?.filter((t) => t.status === "ACTIVE") ?? [];
-  const noticeTenants = tenants?.filter((t) => t.status === "NOTICE") ?? [];
+  return {
+    totalDue,
+    totalPaid,
+    overdueTotal: overdueEntries.reduce((sum, entry) => sum + Math.max(0, entry.amountDue - entry.amountPaid), 0),
+    collectionPct: totalDue > 0 ? Math.round((totalPaid / totalDue) * 100) : 0,
+    currentMonth,
+    currentMonthLabel,
+    recentPayments: rentEntries.filter((entry) => entry.amountPaid > 0).slice(0, 5),
+    overdueEntries: overdueEntries.slice(0, 5),
+    activeTenants: tenants.filter((tenant) => tenant.status === "ACTIVE"),
+    noticeTenants: tenants.filter((tenant) => tenant.status === "NOTICE")
+  };
+}
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
+function DashboardLoading() {
   return (
-    <div className="flex flex-col gap-8">
-      
-      {/* Welcome Section */}
-      <section className="grid gap-5 lg:grid-cols-[1fr_360px] animate-slide-up stagger-1">
-        <div className="rounded-xl border border-border bg-card p-5 md:p-6 shadow-soft">
-          <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-strong">Owner workspace</p>
-              <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground md:text-4xl">Daily Control</h1>
-              <p className="mt-2 text-sm font-medium text-muted-foreground">
-                {activeProperty
-                  ? `${activeProperty.name} - ${activeProperty.city}, ${activeProperty.state}`
-                  : "Create a property to unlock rent, tenant, and maintenance workflows."}
-              </p>
-            </div>
-            <div className="flex gap-3 shrink-0 w-full sm:w-auto">
-              <Button asChild variant="outline" className="w-full sm:w-auto">
-                <Link href="/tenants"><UserPlus className="mr-2 h-4 w-4" />Add Tenant</Link>
-              </Button>
-              <Button asChild className="w-full sm:w-auto">
-                <Link href="/payments/new"><WalletCards className="mr-2 h-4 w-4" />Record Rent</Link>
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-primary/20 bg-primary text-primary-foreground p-5 shadow-float">
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-foreground/70">This month</p>
-          <div className="mt-3 flex items-end justify-between gap-3">
-            <div>
-              <p className="text-4xl font-bold">{collectionPct}%</p>
-              <p className="mt-1 text-sm font-medium text-primary-foreground/75">collection rate</p>
-            </div>
-            <ReceiptText className="h-10 w-10 text-primary-foreground/70" />
-          </div>
-          <progress
-            value={collectionPct}
-            max={100}
-            aria-label="This month collection rate"
-            className="progress-meter progress-meter-primary mt-5 h-2 w-full"
-          />
-          <p className="mt-3 text-xs font-medium text-primary-foreground/75">
-            {formatPaisaShort(totalPaid)} collected / {formatPaisaShort(totalDue)} expected
-          </p>
-        </div>
-      </section>
-
-      {/* KPI Row */}
-      <section className="grid grid-cols-2 md:grid-cols-3 gap-4 animate-slide-up stagger-2">
-        <Card className="border-border">
-          <CardHeader className="p-4 pb-2 flex-row justify-between items-center space-y-0">
-             <CardDescription className="font-semibold uppercase tracking-wider text-xs">Occupied Beds</CardDescription>
-             <div className="bg-success/10 p-1.5 rounded-md text-success"><BedDouble size={16}/></div>
-          </CardHeader>
-          <CardContent className="p-4 pt-0">
-            <span className="text-3xl font-bold">{occupiedBeds}</span>
-            <p className="text-xs text-muted-foreground font-medium mt-1">
-              {activeTenants.length} active tenant{activeTenants.length !== 1 ? "s" : ""}
-            </p>
-          </CardContent>
-        </Card>
-
-         <Card className="border-border">
-          <CardHeader className="p-4 pb-2 flex-row justify-between items-center space-y-0">
-             <CardDescription className="font-semibold uppercase tracking-wider text-xs">Vacant Beds</CardDescription>
-             <div className="bg-destructive/10 p-1.5 rounded-md text-destructive"><DoorClosed size={16}/></div>
-          </CardHeader>
-          <CardContent className="p-4 pt-0">
-            <span className="text-3xl font-bold">{vacantBeds}</span>
-            <p className="text-xs text-muted-foreground font-medium mt-1">
-              {noticeTenants.length} upcoming vacanc{noticeTenants.length !== 1 ? "ies" : "y"}
-            </p>
-          </CardContent>
-        </Card>
-
-         <Card className="border-border col-span-2 md:col-span-1">
-          <CardHeader className="p-4 pb-2 flex-row justify-between items-center space-y-0">
-             <CardDescription className="font-semibold uppercase tracking-wider text-xs">Rent Collection</CardDescription>
-             <div className="bg-primary/10 p-1.5 rounded-md text-primary-strong"><IndianRupee size={16}/></div>
-          </CardHeader>
-          <CardContent className="p-4 pt-0">
-            <span className="text-3xl font-bold">{collectionPct}%</span>
-            <p className="text-xs text-muted-foreground font-medium mt-1">
-              {formatPaisaShort(totalPaid)} collected / {formatPaisaShort(totalDue)} expected
-            </p>
-             <progress
-               value={collectionPct}
-               max={100}
-               aria-label="Rent collection rate"
-               className="progress-meter mt-3 h-1.5 w-full"
-             />
-          </CardContent>
-        </Card>
-      </section>
-
-      {/* Actionable Alerts */}
-      {overdueEntries.length > 0 && (
-        <section className="animate-slide-up stagger-3">
-          <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-4 flex gap-4 items-start relative overflow-hidden">
-             <div className="bg-destructive/10 p-2 rounded-lg text-destructive shrink-0">
-               <AlertCircle size={20} className="text-destructive"/>
-             </div>
-             <div className="flex flex-col gap-1 items-start">
-                <h4 className="font-semibold text-destructive">
-                  {overdueEntries.length} tenant{overdueEntries.length > 1 ? "s have" : " has"} overdue rent
-                </h4>
-                <p className="text-sm text-destructive/80 font-medium">
-                  Outstanding total: {formatPaisa(overdueTotal)}.
-                </p>
-                <Button asChild variant="outline" size="sm" className="mt-2 h-8 text-destructive border-destructive/20 bg-destructive/5 hover:bg-destructive/10 hover:text-destructive">
-                  <Link href="/payments">Review Dues</Link>
-                </Button>
-             </div>
-          </div>
-        </section>
-      )}
-
-      {/* Activity Log Grid */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-slide-up stagger-4">
-         
-         {/* Recent Payments (from rent entries) */}
-         <Card>
-           <CardHeader className="border-b border-border p-5">
-              <div className="flex items-center justify-between">
-                 <CardTitle className="text-lg">Recent Payments</CardTitle>
-              </div>
-           </CardHeader>
-           <div className="p-0">
-              {rentEntries && rentEntries.filter((e) => e.amountPaid > 0).length > 0 ? (
-                rentEntries
-                  .filter((e) => e.amountPaid > 0)
-                  .slice(0, 5)
-                  .map((entry, i) => (
-                    <div key={entry.id} className="flex items-start gap-4 p-4 border-b border-border last:border-0 hover:bg-secondary/50 transition-colors">
-                      <div className="p-2 rounded-full shrink-0 bg-success/10 text-success">
-                        <IndianRupee size={16}/>
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-sm font-medium text-foreground">
-                          {entry.tenantName} paid {formatPaisa(entry.amountPaid)}
-                        </span>
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Clock size={10} /> {entry.billingMonth}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-              ) : (
-                <div className="p-6 text-center text-muted-foreground text-sm">No recent payments found.</div>
-              )}
-           </div>
-         </Card>
-
-          {/* Outstanding Dues */}
-          <Card>
-           <CardHeader className="border-b border-border p-5">
-              <div className="flex items-center justify-between">
-                 <CardTitle className="text-lg">Outstanding Dues</CardTitle>
-              </div>
-           </CardHeader>
-           <div className="p-0">
-              {overdueEntries.length > 0 ? (
-                overdueEntries.slice(0, 5).map((entry) => (
-                  <div key={entry.id} className="flex items-center justify-between p-4 border-b border-border last:border-0 hover:bg-secondary/50 transition-colors">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm font-semibold text-foreground">{entry.tenantName}</span>
-                      <span className="text-xs text-destructive font-medium">{entry.billingMonth} overdue</span>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                       <span className="text-sm font-bold text-foreground">{formatPaisa(entry.amountDue - entry.amountPaid)}</span>
-                       <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-primary/20 text-primary-strong">Remind</Badge>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="p-6 text-center text-muted-foreground text-sm">No overdue entries. All clear.</div>
-              )}
-           </div>
-         </Card>
-
-      </section>
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {[0, 1, 2, 3].map((item) => (
+        <Card key={item} className="h-32 animate-pulse bg-secondary/60" />
+      ))}
+      <div className="col-span-full flex items-center justify-center py-10">
+        <Loader2 className="h-7 w-7 animate-spin text-primary" />
+      </div>
     </div>
   );
 }
 
-import { useRequireRole } from "@/contexts/AuthContext";
+function EmptyPropertyPanel() {
+  return (
+    <EmptyState
+      title="No active property yet"
+      description="Create your first property, add rooms, then invite tenants into the rent ledger."
+      icon={<DoorClosed className="h-6 w-6" />}
+      action={
+        <Button asChild>
+          <Link href="/properties/new">
+            <Plus className="mr-2 h-4 w-4" />
+            Add Property
+          </Link>
+        </Button>
+      }
+    />
+  );
+}
+
+function OverduePanel({ entries, total }: { entries: RentEntryWithName[]; total: number }) {
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="rounded-xl border border-destructive/20 bg-destructive-soft/10 p-5 backdrop-blur-md relative overflow-hidden">
+      <div className="absolute inset-y-0 left-0 w-1 bg-destructive" />
+      <div className="flex items-start gap-4">
+        <span className="rounded-lg bg-destructive/10 p-2 text-destructive">
+          <AlertCircle className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-semibold text-foreground">
+                {entries.length} overdue tenant{entries.length === 1 ? "" : "s"} need follow-up
+              </h2>
+              <p className="mt-1 text-sm font-medium text-muted-foreground">
+                Pending now: <MoneyValue amount={total} className="text-destructive font-bold" />.
+              </p>
+            </div>
+            <Button asChild variant="outline" size="sm" className="border-destructive/20 hover:bg-destructive/10 hover:text-destructive">
+              <Link href="/payments">Review dues</Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ActivityList({ entries }: { entries: RentEntryWithName[] }) {
+  return (
+    <Card className="shadow-card">
+      <CardHeader className="border-b border-white/[0.04] p-5">
+        <CardTitle className="text-lg">Recent Payments</CardTitle>
+      </CardHeader>
+      <div className="space-y-3 p-4">
+        {entries.length > 0 ? (
+          entries.map((entry) => (
+            <MobileListCard
+              key={entry.id}
+              title={entry.tenantName}
+              meta={
+                <span className="inline-flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {entry.billingMonth}
+                </span>
+              }
+              value={<MoneyValue amount={entry.amountPaid} size="sm" />}
+              status={<StatusBadge status="PAID" />}
+            />
+          ))
+        ) : (
+          <EmptyState
+            title="No rent collected yet"
+            description="Payments recorded this month will appear here."
+            icon={<ReceiptText className="h-6 w-6" />}
+            className="py-10"
+          />
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function DuesList({ entries }: { entries: RentEntryWithName[] }) {
+  return (
+    <Card className="shadow-card">
+      <CardHeader className="border-b border-white/[0.04] p-5">
+        <CardTitle className="text-lg">Outstanding Dues</CardTitle>
+      </CardHeader>
+      <div className="space-y-3 p-4">
+        {entries.length > 0 ? (
+          entries.map((entry) => (
+            <MobileListCard
+              key={entry.id}
+              title={entry.tenantName}
+              meta={`${entry.billingMonth} overdue`}
+              value={<MoneyValue amount={entry.amountDue - entry.amountPaid} size="sm" />}
+              status={<StatusBadge status={entry.status} />}
+            />
+          ))
+        ) : (
+          <EmptyState
+            title="No overdue rent"
+            description="All tenants are clear for now."
+            icon={<IndianRupee className="h-6 w-6" />}
+            className="py-10"
+          />
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function NotificationList({ entries, refetch }: { entries: NotificationDto[]; refetch: () => void }) {
+  return (
+    <Card className="shadow-card lg:col-span-2">
+      <CardHeader className="border-b border-white/[0.04] p-5">
+        <CardTitle className="flex items-center gap-2 text-lg"><Bell className="h-5 w-5" /> Owner alerts</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 p-4">
+        {entries.length ? entries.slice(0, 5).map((entry) => (
+          <button
+            type="button"
+            key={entry.id}
+            className="w-full rounded-lg border border-border p-4 text-left hover:bg-secondary/40"
+            onClick={async () => {
+              if (!entry.readAt) await fetchApi(`/notifications/${entry.id}/read`, { method: "POST" });
+              refetch();
+            }}
+          >
+            <span className="font-semibold text-foreground">{entry.title}</span>
+            {!entry.readAt ? <span className="ml-2 text-xs font-bold text-primary">NEW</span> : null}
+            <span className="mt-1 block text-sm text-muted-foreground">{entry.content}</span>
+          </button>
+        )) : (
+          <p className="py-6 text-center text-sm text-muted-foreground">No owner alerts.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PaymentClaims({ entries, refetch }: { entries: PaymentClaim[]; refetch: () => void }) {
+  const pending = entries.filter((entry) => entry.status === "PENDING");
+  if (!pending.length) return null;
+  return (
+    <Card className="shadow-card lg:col-span-2">
+      <CardHeader><CardTitle className="text-lg">Payments awaiting confirmation</CardTitle></CardHeader>
+      <CardContent className="space-y-3">
+        {pending.map((claim) => (
+          <div key={claim.id} className="flex flex-col gap-3 rounded-lg border border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-semibold">{claim.tenantName} · {claim.billingMonth}</p>
+              <p className="text-sm text-muted-foreground"><MoneyValue amount={claim.amount} size="sm" /> via {claim.mode}{claim.referenceNumber ? ` · ${claim.referenceNumber}` : ""}</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={async () => {
+                const reason = window.prompt("Reason for rejection");
+                if (!reason) return;
+                await fetchApi(`/payment-claims/${claim.id}/resolve`, { method: "POST", body: JSON.stringify({ decision: "REJECT", reason }) });
+                refetch();
+              }}>Reject</Button>
+              <Button size="sm" onClick={async () => {
+                await fetchApi(`/payment-claims/${claim.id}/resolve`, { method: "POST", body: JSON.stringify({ decision: "APPROVE" }) });
+                refetch();
+              }}>Confirm payment</Button>
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DashboardContent() {
+  const { user } = useAuth();
+  const { activeProperty, loading: propertyLoading } = useProperty();
+  const propertyId = activeProperty?.id;
+  const { data: tenants, loading: tenantsLoading } = useApi<TenantDto[]>(
+    propertyId ? `/properties/${propertyId}/tenants?limit=100` : null
+  );
+  const { data: rentEntries, loading: rentLoading } = useApi<RentEntryWithName[]>(
+    propertyId ? `/properties/${propertyId}/rent` : null
+  );
+  const { data: notifications, refetch: refetchNotifications } = useApi<NotificationDto[]>("/notifications");
+  const canReviewPayments = user?.role === "OWNER" || user?.staffAssignments?.some((assignment) =>
+    assignment.propertyId === propertyId && ["MANAGER", "ACCOUNTANT"].includes(assignment.role)
+  );
+  const { data: paymentClaims, refetch: refetchClaims } = useApi<PaymentClaim[]>(
+    propertyId && canReviewPayments ? `/properties/${propertyId}/payment-claims` : null
+  );
+  const loading = propertyLoading || tenantsLoading || rentLoading;
+  const stats = getDashboardStats(tenants ?? [], rentEntries ?? []);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Daily Control"
+        description={
+          activeProperty
+            ? `${activeProperty.name}, ${activeProperty.city} - ${activeProperty.state}`
+            : "Start with a property, then rooms, tenants, rent, and receipts."
+        }
+        actions={
+          <QuickActionBar>
+            <Button asChild variant="outline" className="justify-start sm:w-auto">
+              <Link href="/tenants">
+                <UserPlus className="mr-2 h-4 w-4" />
+                Add Tenant
+              </Link>
+            </Button>
+            <Button asChild className="justify-start sm:w-auto">
+              <Link href="/payments/new">
+                <WalletCards className="mr-2 h-4 w-4" />
+                Record Rent
+              </Link>
+            </Button>
+          </QuickActionBar>
+        }
+      />
+
+      {!activeProperty ? <EmptyPropertyPanel /> : null}
+      {loading ? <DashboardLoading /> : null}
+
+      {!loading && activeProperty ? (
+        <>
+          <RentLedgerStrip
+            monthLabel={`${stats.currentMonthLabel} rent ledger`}
+            className="rounded-xl border border-white/[0.06] bg-card/40 backdrop-blur-xl p-5 shadow-glass"
+            items={[
+              { id: "expected", label: "Expected", value: stats.totalDue, isMoney: true },
+              { id: "collected", label: "Collected", value: stats.totalPaid, isMoney: true, color: "success" },
+              { id: "overdue", label: "Overdue", value: stats.overdueTotal, isMoney: true, color: "destructive" },
+              { id: "rate", label: "Collection", value: `${stats.collectionPct}%`, color: stats.collectionPct >= 85 ? "success" : "warning" }
+            ]}
+          />
+
+          <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <MetricCard
+              title="Occupied Beds"
+              value={activeProperty.occupiedBeds}
+              icon={<BedDouble className="text-primary" />}
+              subtitle={`${stats.activeTenants.length} active tenants`}
+            />
+            <MetricCard
+              title="Vacant Beds"
+              value={activeProperty.vacantBeds}
+              icon={<DoorClosed className="text-primary" />}
+              subtitle={`${stats.noticeTenants.length} on notice`}
+            />
+            <MetricCard
+              title="Expected Rent"
+              value={<MoneyValue amount={stats.totalDue} />}
+              icon={<IndianRupee className="text-primary" />}
+              subtitle={stats.currentMonth}
+            />
+            <MetricCard
+              title="Collected"
+              value={<MoneyValue amount={stats.totalPaid} />}
+              icon={<ReceiptText className="text-primary" />}
+              subtitle={`${stats.collectionPct}% collection rate`}
+            />
+          </section>
+
+          <OverduePanel entries={stats.overdueEntries} total={stats.overdueTotal} />
+
+          <section className="grid gap-6 lg:grid-cols-2">
+            <ActivityList entries={stats.recentPayments} />
+            <DuesList entries={stats.overdueEntries} />
+            <NotificationList entries={notifications ?? []} refetch={refetchNotifications} />
+            {canReviewPayments ? <PaymentClaims entries={paymentClaims ?? []} refetch={refetchClaims} /> : null}
+          </section>
+        </>
+      ) : null}
+    </div>
+  );
+}
 
 export default function Dashboard() {
-  const { authorized } = useRequireRole("OWNER");
+  const { authorized } = useRequireRoles(["OWNER", "STAFF"]);
   if (!authorized) return null;
 
   return (

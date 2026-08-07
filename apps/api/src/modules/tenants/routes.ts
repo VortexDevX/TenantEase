@@ -6,12 +6,14 @@ import { ok } from "../../lib/http.js";
 import { createAuditLog } from "../common/audit.js";
 import {
   paginationSchema,
+  noticeInputSchema,
   tenantInputSchema,
   transferInputSchema,
   vacateInputSchema
 } from "../common/schemas.js";
 import { toRoomTransferRecordDto, toTenantDto, toVacateRecordDto } from "../common/serializers.js";
-import { assertRoomAvailability, recalculateRoom } from "./service.js";
+import { assertRoomAvailability, lockRoom, recalculateRoom } from "./service.js";
+import { pdfProvider, storageProvider } from "../../providers/mock-providers.js";
 
 export async function tenantRoutes(app: FastifyInstance) {
   app.get("/properties/:propertyId/tenants", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
@@ -58,16 +60,23 @@ export async function tenantRoutes(app: FastifyInstance) {
     const params = request.params as { propertyId: string };
     const body = tenantInputSchema.parse({ ...(request.body as object), propertyId: params.propertyId });
     const { ownerProfileId } = await assertPropertyAccess(request, params.propertyId, "tenant:write");
-    await assertRoomAvailability(body.roomId, ownerProfileId);
-
-    const tenant = await prisma.tenant.create({
-      data: {
-        ...body,
-        moveInDate: new Date(body.moveInDate)
+    const tenant = await prisma.$transaction(async (tx) => {
+      await lockRoom(tx, body.roomId);
+      await assertRoomAvailability(body.roomId, ownerProfileId, tx);
+      const existingActiveTenant = await tx.tenant.findFirst({
+        where: { phone: body.phone, status: { in: ["ACTIVE", "NOTICE"] } },
+        select: { id: true }
+      });
+      if (existingActiveTenant) {
+        throw new AppError(409, "VALIDATION_ERROR", "An active tenant with this phone number already exists");
       }
-    });
 
-    await recalculateRoom(body.roomId);
+      const created = await tx.tenant.create({
+        data: { ...body, moveInDate: new Date(body.moveInDate) }
+      });
+      await recalculateRoom(body.roomId, tx);
+      return created;
+    });
     await createAuditLog({
       userId: request.user.sub,
       action: "tenant.create",
@@ -118,6 +127,11 @@ export async function tenantRoutes(app: FastifyInstance) {
         fullName: body.fullName,
         phone: body.phone,
         email: body.email,
+        emergencyContactName: body.emergencyContactName,
+        emergencyContactPhone: body.emergencyContactPhone,
+        emergencyContactRelation: body.emergencyContactRelation,
+        aadhaarLast4: body.aadhaarLast4,
+        notes: body.notes,
         monthlyRent: body.monthlyRent,
         depositPaid: body.depositPaid
       }
@@ -143,7 +157,8 @@ export async function tenantRoutes(app: FastifyInstance) {
       where: {
         id: params.id,
         property: { ownerProfileId }
-      }
+      },
+      include: { property: { select: { name: true } } }
     });
 
     if (!tenant) {
@@ -172,7 +187,8 @@ export async function tenantRoutes(app: FastifyInstance) {
         where: { id: tenant.id },
         data: {
           status: "VACATED",
-          vacatedAt: new Date(body.vacatedAt)
+          vacatedAt: new Date(body.vacatedAt),
+          expectedVacateDate: null
         }
       });
 
@@ -191,10 +207,35 @@ export async function tenantRoutes(app: FastifyInstance) {
         }
       });
 
+      await recalculateRoom(tenant.roomId, tx);
+
       return { updatedTenant, vacateRecord };
     });
 
-    await recalculateRoom(tenant.roomId);
+    let vacateRecord = result.vacateRecord;
+    try {
+      const settlementPdf = await pdfProvider.createSettlementPdf({
+        tenantName: tenant.fullName,
+        propertyName: tenant.property.name,
+        vacatedAt: body.vacatedAt,
+        depositPaid: tenant.depositPaid,
+        damageDeduction: body.damageDeduction,
+        pendingRent,
+        refundAmount,
+        refundStatus: body.refundStatus,
+        finalNotes: body.finalNotes
+      });
+      const settlementPdfPath = await storageProvider.saveBuffer(
+        `settlements/settlement-${result.vacateRecord.id}.pdf`,
+        settlementPdf
+      );
+      vacateRecord = await prisma.vacateRecord.update({
+        where: { id: result.vacateRecord.id },
+        data: { settlementPdfPath }
+      });
+    } catch (error) {
+      request.log.error({ err: error, vacateRecordId: result.vacateRecord.id }, "settlement PDF generation failed");
+    }
     await createAuditLog({
       userId: request.user.sub,
       action: "tenant.vacate",
@@ -206,8 +247,53 @@ export async function tenantRoutes(app: FastifyInstance) {
     });
     return ok({
       tenant: toTenantDto(result.updatedTenant),
-      vacateRecord: toVacateRecordDto(result.vacateRecord)
+      vacateRecord: toVacateRecordDto(vacateRecord)
     });
+  });
+
+  app.post("/tenants/:id/notice", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
+    const { id } = request.params as { id: string };
+    const body = noticeInputSchema.parse(request.body);
+    await assertTenantAccess(request, id, "tenant:write");
+    const expectedVacateDate = new Date(`${body.expectedVacateDate}T23:59:59.999Z`);
+    if (expectedVacateDate <= new Date()) {
+      throw new AppError(422, "VALIDATION_ERROR", "Expected vacate date must be in the future");
+    }
+    const tenant = await prisma.tenant.findUnique({ where: { id } });
+    if (!tenant || tenant.status === "VACATED") throw new AppError(422, "VALIDATION_ERROR", "Vacated tenant cannot enter notice");
+    const updated = await prisma.tenant.update({
+      where: { id },
+      data: { status: "NOTICE", noticeDate: new Date(), expectedVacateDate }
+    });
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "tenant.notice",
+      resource: "Tenant",
+      resourceId: id,
+      payload: body,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
+    return ok(toTenantDto(updated));
+  });
+
+  app.get("/vacate-records/:id/download", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
+    const params = request.params as { id: string };
+    const record = await prisma.vacateRecord.findUnique({
+      where: { id: params.id },
+      select: { id: true, propertyId: true, settlementPdfPath: true }
+    });
+
+    if (!record?.settlementPdfPath) {
+      throw new AppError(404, "NOT_FOUND", "Settlement PDF not found");
+    }
+
+    await assertPropertyAccess(request, record.propertyId, "tenant:read");
+    const buffer = await storageProvider.readBuffer(record.settlementPdfPath);
+    return reply
+      .header("content-type", "application/pdf")
+      .header("content-disposition", `inline; filename="settlement-${record.id}.pdf"`)
+      .send(buffer);
   });
 
   app.post("/tenants/:id/transfer", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
@@ -229,10 +315,10 @@ export async function tenantRoutes(app: FastifyInstance) {
       throw new AppError(422, "INVALID_TRANSFER", "Tenant is already assigned to that room");
     }
 
-    await assertRoomAvailability(body.roomId, ownerProfileId);
-
     const effectiveDate = body.effectiveDate ? new Date(body.effectiveDate) : new Date();
     const result = await prisma.$transaction(async (tx) => {
+      for (const roomId of [tenant.roomId, body.roomId].sort()) await lockRoom(tx, roomId);
+      await assertRoomAvailability(body.roomId, ownerProfileId, tx);
       const updatedTenant = await tx.tenant.update({
         where: { id: tenant.id },
         data: {
@@ -254,10 +340,9 @@ export async function tenantRoutes(app: FastifyInstance) {
         }
       });
 
+      await Promise.all([recalculateRoom(tenant.roomId, tx), recalculateRoom(body.roomId, tx)]);
       return { updatedTenant, transferRecord };
     });
-
-    await Promise.all([recalculateRoom(tenant.roomId), recalculateRoom(body.roomId)]);
     await createAuditLog({
       userId: request.user.sub,
       action: "tenant.transfer",

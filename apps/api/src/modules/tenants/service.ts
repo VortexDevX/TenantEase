@@ -1,9 +1,16 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { roomStatusFromOccupancy } from "../rooms/service.js";
 
-export async function assertRoomAvailability(roomId: string, ownerProfileId: string) {
-  const room = await prisma.room.findFirst({
+type DbClient = typeof prisma | Prisma.TransactionClient;
+
+export async function lockRoom(tx: Prisma.TransactionClient, roomId: string) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${roomId}))`;
+}
+
+export async function assertRoomAvailability(roomId: string, ownerProfileId: string, db: DbClient = prisma) {
+  const room = await db.room.findFirst({
     where: {
       id: roomId,
       property: { ownerProfileId }
@@ -14,15 +21,19 @@ export async function assertRoomAvailability(roomId: string, ownerProfileId: str
     throw new AppError(404, "ROOM_NOT_FOUND", "Room not found");
   }
 
-  if (room.occupiedBeds >= room.bedCount) {
+  const occupiedBeds = await db.tenant.count({
+    where: { roomId, status: { in: ["ACTIVE", "NOTICE"] } }
+  });
+
+  if (occupiedBeds >= room.bedCount) {
     throw new AppError(422, "ROOM_NO_VACANCY", "Room has no vacancy");
   }
 
   return room;
 }
 
-export async function recalculateRoom(roomId: string) {
-  const room = await prisma.room.findUnique({
+export async function recalculateRoom(roomId: string, db: DbClient = prisma) {
+  const room = await db.room.findUnique({
     where: { id: roomId },
     include: {
       tenants: {
@@ -36,7 +47,7 @@ export async function recalculateRoom(roomId: string) {
   }
 
   const occupiedBeds = room.tenants.length;
-  await prisma.room.update({
+  await db.room.update({
     where: { id: room.id },
     data: {
       occupiedBeds,
@@ -44,4 +55,3 @@ export async function recalculateRoom(roomId: string) {
     }
   });
 }
-

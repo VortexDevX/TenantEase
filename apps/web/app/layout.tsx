@@ -1,33 +1,20 @@
-import type { Metadata, Viewport } from 'next';
-import { Poppins } from 'next/font/google';
-import './globals.css';
+import type { Metadata } from "next";
+import { Lexend, Source_Sans_3 } from "next/font/google";
+import "./globals.css";
+import { AuthProvider } from "@/contexts/AuthContext";
 
-const poppins = Poppins({ 
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-poppins'
+const lexend = Lexend({
+  subsets: ["latin"],
+  variable: "--font-heading",
+  display: "swap",
 });
+const sourceSans = Source_Sans_3({ subsets: ["latin"], variable: "--font-body", display: "swap" });
 
 export const metadata: Metadata = {
-  title: 'TenantEase | PG Management',
-  description: 'Smart Property & Tenant Management for India',
-  manifest: '/manifest.webmanifest',
-  appleWebApp: {
-    capable: true,
-    title: 'TenantEase',
-    statusBarStyle: 'default'
-  },
-  icons: {
-    icon: '/tenant-ease-icon.svg',
-    apple: '/tenant-ease-icon.svg'
-  }
+  title: "TenantEase — PG & Rental Management",
+  description:
+    "Digital rent register for PG owners, hostels, and rental properties. Manage tenants, payments, rooms, and reports.",
 };
-
-export const viewport: Viewport = {
-  themeColor: '#0f766e'
-};
-
-import { AuthProvider } from '../contexts/AuthContext';
 
 export default function RootLayout({
   children,
@@ -35,11 +22,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className={`${poppins.variable} font-sans antialiased bg-background`}>
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+    <html lang="en" className="dark">
+      <body className={`${sourceSans.variable} ${lexend.variable} bg-background text-foreground min-h-screen`}>
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

@@ -31,13 +31,17 @@ export async function sendOtp(phone: string) {
     take: OTP_HOURLY_LIMIT
   });
 
-  if (recentChallenges[0] && Date.now() - recentChallenges[0].createdAt.getTime() < OTP_RESEND_COOLDOWN_MS) {
+  if (
+    env.NODE_ENV !== "development" &&
+    recentChallenges[0] &&
+    Date.now() - recentChallenges[0].createdAt.getTime() < OTP_RESEND_COOLDOWN_MS
+  ) {
     throw new AppError(429, "RATE_LIMITED", "Wait before requesting another OTP", {
       retryAfterSeconds: Math.ceil((OTP_RESEND_COOLDOWN_MS - (Date.now() - recentChallenges[0].createdAt.getTime())) / 1000)
     });
   }
 
-  if (recentChallenges.length >= OTP_HOURLY_LIMIT) {
+  if (env.NODE_ENV !== "development" && recentChallenges.length >= OTP_HOURLY_LIMIT) {
     throw new AppError(429, "RATE_LIMITED", "Too many OTP requests. Try again later.", {
       limit: OTP_HOURLY_LIMIT,
       windowSeconds: 3600
@@ -68,12 +72,12 @@ export async function sendOtp(phone: string) {
  *
  * Role resolution order:
  *   1. user.role === ADMIN (set manually in DB) → ADMIN
- *   2. user has OwnerProfile → OWNER
- *   3. Active staff assignment exists → STAFF
+ *   2. user.role === OWNER and user has OwnerProfile → OWNER
+ *   3. user.role === STAFF and active staff assignment exists → STAFF
  *   4. Tenant record exists for phone → TENANT
  *   5. New user (no records) → TENANT (default)
  */
-export async function verifyOtp(phone: string, otp: string, challengeId: string) {
+export async function verifyOtp(phone: string, otp: string, challengeId: string, options?: { ownerSignup?: boolean }) {
   const challenge = await prisma.otpChallenge.findFirst({
     where: {
       id: challengeId,
@@ -125,6 +129,15 @@ export async function verifyOtp(phone: string, otp: string, challengeId: string)
           },
           include: { ownerProfile: true }
         });
+      } else if (options?.ownerSignup) {
+        user = await tx.user.create({
+          data: {
+            phone,
+            role: "OWNER",
+            ownerProfile: { create: {} }
+          },
+          include: { ownerProfile: true }
+        });
       } else {
         user = await tx.user.create({
           data: {
@@ -136,6 +149,8 @@ export async function verifyOtp(phone: string, otp: string, challengeId: string)
       }
     } else if (user.isBlocked) {
       throw new AppError(403, "AUTH_FORBIDDEN", "This account is blocked");
+    } else if (options?.ownerSignup) {
+      throw new AppError(409, "VALIDATION_ERROR", "An account with this number already exists. Please sign in instead.");
     } else if (isAdminPhone && user.role !== "ADMIN") {
       user = await tx.user.update({
         where: { id: user.id },
@@ -170,6 +185,21 @@ export async function verifyOtp(phone: string, otp: string, challengeId: string)
       orderBy: { invitedAt: "desc" }
     });
 
+    if (options?.ownerSignup && !isAdminPhone && !user.ownerProfile) {
+      if (activeTenant || activeStaffAssignment || user.role === "ADMIN") {
+        throw new AppError(403, "AUTH_OWNER_SIGNUP_UNAVAILABLE", "This phone already has tenant, staff, or admin access");
+      }
+
+      user = await tx.user.update({
+        where: { id: user.id },
+        data: {
+          role: "OWNER",
+          ownerProfile: { create: {} }
+        },
+        include: { ownerProfile: true }
+      });
+    }
+
     if (activeStaffAssignment?.inviteStatus === "PENDING") {
       await tx.staffAssignment.updateMany({
         where: {
@@ -184,16 +214,24 @@ export async function verifyOtp(phone: string, otp: string, challengeId: string)
       });
     }
 
+    if (activeStaffAssignment && user.role === "TENANT" && !activeTenant) {
+      user = await tx.user.update({
+        where: { id: user.id },
+        data: { role: "STAFF" },
+        include: { ownerProfile: true }
+      });
+    }
+
     let resolvedRole: "ADMIN" | "OWNER" | "STAFF" | "TENANT" = "TENANT";
     let ownerProfileId: string | undefined;
     let tenantId: string | undefined;
 
     if (isAdminPhone || user.role === "ADMIN") {
       resolvedRole = "ADMIN";
-    } else if (user.ownerProfile) {
+    } else if (user.role === "OWNER" && user.ownerProfile) {
       resolvedRole = "OWNER";
       ownerProfileId = user.ownerProfile.id;
-    } else if (activeStaffAssignment) {
+    } else if (user.role === "STAFF" && activeStaffAssignment) {
       resolvedRole = "STAFF";
     } else {
       resolvedRole = "TENANT";
@@ -281,10 +319,10 @@ export async function rotateRefreshToken(rawToken: string) {
 
   if (existing.user.role === "ADMIN") {
     resolvedRole = "ADMIN";
-  } else if (existing.user.ownerProfile) {
+  } else if (existing.user.role === "OWNER" && existing.user.ownerProfile) {
     resolvedRole = "OWNER";
     ownerProfileId = existing.user.ownerProfile.id;
-  } else if (activeStaffAssignment) {
+  } else if (existing.user.role === "STAFF" && activeStaffAssignment) {
     resolvedRole = "STAFF";
   } else {
     const tenant = await prisma.tenant.findFirst({

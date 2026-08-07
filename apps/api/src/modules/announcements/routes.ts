@@ -1,10 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { requireOwnerProfileId } from "../../lib/auth-guards.js";
+import { assertPropertyAccess } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
-import { assertPropertyOwnership } from "../common/owner.js";
 
 const announcementCategorySchema = z.enum(["GENERAL", "MAINTENANCE", "PAYMENT", "RULE_CHANGE", "EMERGENCY"]);
 
@@ -23,11 +22,9 @@ const announcementUpdateSchema = announcementInputSchema.partial().refine((value
 
 export async function announcementRoutes(app: FastifyInstance) {
   // 13.1 List Announcements
-  app.get("/properties/:propertyId/announcements", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get("/properties/:propertyId/announcements", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const params = request.params as { propertyId: string };
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
-    
-    await assertPropertyOwnership(params.propertyId, ownerProfileId);
+    await assertPropertyAccess(request, params.propertyId, "announcement:read");
 
     const announcements = await prisma.announcement.findMany({
       where: { propertyId: params.propertyId },
@@ -55,12 +52,10 @@ export async function announcementRoutes(app: FastifyInstance) {
 
   // 13.2 Create Announcement
   app.post("/properties/:propertyId/announcements", { 
-    preHandler: [app.authenticate] 
+    preHandler: [app.authenticateOwnerOrStaff]
   }, async (request, reply) => {
     const params = request.params as { propertyId: string };
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
-    
-    await assertPropertyOwnership(params.propertyId, ownerProfileId);
+    await assertPropertyAccess(request, params.propertyId, "announcement:write");
 
     const body = announcementInputSchema.parse(request.body);
     const targetRoomId = body.targetRoomId || null;
@@ -87,14 +82,12 @@ export async function announcementRoutes(app: FastifyInstance) {
   });
 
   // 13.3 Update Announcement
-  app.put("/announcements/:id", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.put("/announcements/:id", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const params = request.params as { id: string };
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
-    
     const target = await prisma.announcement.findUnique({ where: { id: params.id } });
     if (!target) throw new AppError(404, "NOT_FOUND", "Announcement not found");
 
-    await assertPropertyOwnership(target.propertyId, ownerProfileId);
+    await assertPropertyAccess(request, target.propertyId, "announcement:write");
 
     const body = announcementUpdateSchema.parse(request.body);
     
@@ -122,14 +115,12 @@ export async function announcementRoutes(app: FastifyInstance) {
   });
 
   // 13.4 Delete Announcement
-  app.delete("/announcements/:id", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.delete("/announcements/:id", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const params = request.params as { id: string };
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
-    
     const target = await prisma.announcement.findUnique({ where: { id: params.id } });
     if (!target) return ok({ success: true });
 
-    await assertPropertyOwnership(target.propertyId, ownerProfileId);
+    await assertPropertyAccess(request, target.propertyId, "announcement:write");
 
     await prisma.announcement.delete({ where: { id: params.id } });
     return ok({ success: true });

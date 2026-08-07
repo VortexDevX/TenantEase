@@ -16,7 +16,7 @@ export function formatPaisa(paisa: number): string {
  * Format an ISO date string to a readable date.
  * e.g. "2023-10-12T..." → "12 Oct 2023"
  */
-export function formatDate(iso: string): string {
+function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-IN", {
     day: "numeric",
     month: "short",
@@ -42,18 +42,4 @@ export function timeAgo(iso: string): string {
   if (diffDay === 1) return "Yesterday";
   if (diffDay < 30) return `${diffDay} days ago`;
   return formatDate(iso);
-}
-
-/**
- * Format paisa to a short display like "3.4L" or "85K"
- */
-export function formatPaisaShort(paisa: number): string {
-  const rupees = paisa / 100;
-  if (rupees >= 100000) {
-    return `₹${(rupees / 100000).toFixed(1)}L`;
-  }
-  if (rupees >= 1000) {
-    return `₹${(rupees / 1000).toFixed(rupees >= 10000 ? 0 : 1)}K`;
-  }
-  return formatPaisa(paisa);
 }

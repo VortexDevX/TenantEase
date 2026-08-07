@@ -1,258 +1,385 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  BedDouble,
+  Download,
+  IndianRupee,
+  Loader2,
+  TrendingUp,
+  Users
+} from "lucide-react";
+
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { useRequireRole } from "@/contexts/AuthContext";
+import { useRequireRoles } from "@/contexts/AuthContext";
 import { useProperty } from "@/lib/PropertyContext";
 import { useApi } from "@/lib/useApi";
+import { fetchApiBlob } from "@/lib/api-client";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { formatPaisa } from "@/lib/format";
-import { Loader2, TrendingUp, TrendingDown, Users, BedDouble, AlertTriangle } from "lucide-react";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { MetricCard } from "@/components/shared/MetricCard";
+import { MobileListCard } from "@/components/shared/MobileListCard";
+import { MoneyValue } from "@/components/shared/MoneyValue";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { QuickActionBar } from "@/components/shared/QuickActionBar";
+import { RentLedgerStrip } from "@/components/shared/RentLedgerStrip";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
 
-export default function ReportsPage() {
-  const { authorized } = useRequireRole("OWNER");
-  const { activeProperty } = useProperty();
+type MonthlyReport = {
+  period: string;
+  income: {
+    netExpected: number;
+    totalCollected: number;
+    totalOutstanding: number;
+    collectionRate: number;
+    tenantsPaid: number;
+    tenantsUnpaid: number;
+  };
+  payments: {
+    cash: number;
+    upi: number;
+    bankTransfer: number;
+    online: number;
+    total: number;
+  };
+  occupancy: {
+    totalRooms: number;
+    totalBeds: number;
+    occupiedBeds: number;
+    vacantBeds: number;
+    occupancyRate: number;
+  };
+  defaulters: Array<{
+    name: string;
+    room: string;
+    amountDue: number;
+    daysOverdue: number;
+  }>;
+};
 
-  const now = new Date();
+type AnnualReport = {
+  financialYear: string;
+  monthly: Array<{
+    billingMonth: string;
+    expected: number;
+    collected: number;
+    outstanding: number;
+  }>;
+  totals: {
+    expected: number;
+    collected: number;
+    outstanding: number;
+  };
+};
+
+type PaymentBreakdownItem = {
+  label: string;
+  amount: number;
+  tone: string;
+};
+
+function periodYears(currentYear: number) {
+  return [currentYear - 1, currentYear, currentYear + 1, currentYear + 2];
+}
+
+function reportUrl(propertyId: string | undefined, month: number, year: number) {
+  return propertyId ? `/properties/${propertyId}/reports/monthly?month=${month}&year=${year}` : null;
+}
+
+function annualUrl(propertyId: string | undefined, year: number) {
+  return propertyId ? `/properties/${propertyId}/reports/annual?fy=${year}` : null;
+}
+
+function PeriodControls({
+  month,
+  setMonth,
+  year,
+  setYear,
+  onExport,
+  exportDisabled
+}: {
+  month: number;
+  setMonth: (month: number) => void;
+  year: number;
+  setYear: (year: number) => void;
+  onExport: () => void;
+  exportDisabled: boolean;
+}) {
+  return (
+    <QuickActionBar>
+      <select
+        value={month}
+        onChange={(event) => setMonth(parseInt(event.target.value, 10))}
+        className="h-10 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground"
+      >
+        {MONTHS.map((label, index) => (
+          <option key={label} value={index + 1}>{label}</option>
+        ))}
+      </select>
+      <select
+        value={year}
+        onChange={(event) => setYear(parseInt(event.target.value, 10))}
+        className="h-10 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground"
+      >
+        {periodYears(new Date().getFullYear()).map((value) => (
+          <option key={value} value={value}>{value}</option>
+        ))}
+      </select>
+      <Button type="button" variant="outline" onClick={onExport} disabled={exportDisabled}>
+        <Download className="mr-2 h-4 w-4" />
+        Export CSV
+      </Button>
+    </QuickActionBar>
+  );
+}
+
+function ReportLoading() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  );
+}
+
+function SummaryMetrics({ report }: { report: MonthlyReport }) {
+  return (
+    <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <MetricCard
+        title="Expected"
+        value={<MoneyValue amount={report.income.netExpected} />}
+        icon={<IndianRupee className="text-primary" />}
+      />
+      <MetricCard
+        title="Collected"
+        value={<MoneyValue amount={report.income.totalCollected} className="text-success" />}
+        icon={<TrendingUp className="text-primary" />}
+      />
+      <MetricCard
+        title="Outstanding"
+        value={<MoneyValue amount={report.income.totalOutstanding} className="text-warning" />}
+        icon={<AlertTriangle className="text-primary" />}
+      />
+      <MetricCard
+        title="Collection"
+        value={`${report.income.collectionRate}%`}
+        icon={<Users className="text-primary" />}
+        subtitle={`${report.income.tenantsPaid} paid, ${report.income.tenantsUnpaid} unpaid`}
+      />
+    </section>
+  );
+}
+
+function paymentBreakdown(report: MonthlyReport): PaymentBreakdownItem[] {
+  return [
+    { label: "Cash", amount: report.payments.cash, tone: "bg-success" },
+    { label: "UPI", amount: report.payments.upi, tone: "bg-primary" },
+    { label: "Bank Transfer", amount: report.payments.bankTransfer, tone: "bg-info" },
+    { label: "Online", amount: report.payments.online, tone: "bg-warning" }
+  ];
+}
+
+function PaymentsBreakdown({ report }: { report: MonthlyReport }) {
+  const total = Math.max(report.payments.total, 1);
+
+  return (
+    <Card className="shadow-card">
+      <CardHeader className="border-b border-border p-5">
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <TrendingUp className="h-5 w-5 text-primary" />
+          Payments by Mode
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4 p-5">
+        {paymentBreakdown(report).map((item) => {
+          const percent = Math.round((item.amount / total) * 100);
+          return (
+            <div key={item.label} className="space-y-2">
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <span className="font-medium text-muted-foreground">{item.label}</span>
+                <MoneyValue amount={item.amount} size="sm" />
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                <div className={`h-full rounded-full ${item.tone}`} style={{ width: `${percent}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OccupancyCard({ report }: { report: MonthlyReport }) {
+  return (
+    <Card className="shadow-card">
+      <CardHeader className="border-b border-border p-5">
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <BedDouble className="h-5 w-5 text-primary" />
+          Occupancy
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5 p-5">
+        <RentLedgerStrip
+          monthLabel="Bed movement"
+          items={[
+            { id: "rooms", label: "Rooms", value: report.occupancy.totalRooms },
+            { id: "beds", label: "Beds", value: report.occupancy.totalBeds },
+            { id: "occupied", label: "Occupied", value: report.occupancy.occupiedBeds, color: "success" },
+            { id: "vacant", label: "Vacant", value: report.occupancy.vacantBeds, color: "warning" }
+          ]}
+        />
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-sm font-medium">
+            <span className="text-muted-foreground">Occupancy rate</span>
+            <span className="text-foreground">{report.occupancy.occupancyRate}%</span>
+          </div>
+          <div className="h-3 overflow-hidden rounded-full bg-secondary">
+            <div className="h-full rounded-full bg-primary" style={{ width: `${report.occupancy.occupancyRate}%` }} />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DefaultersCard({ report }: { report: MonthlyReport }) {
+  if (report.defaulters.length === 0) {
+    return null;
+  }
+
+  return (
+    <Card className="shadow-card">
+      <CardHeader className="border-b border-border p-5">
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <AlertTriangle className="h-5 w-5 text-destructive" />
+          Defaulters
+        </CardTitle>
+      </CardHeader>
+      <div className="space-y-3 p-4">
+        {report.defaulters.map((defaulter) => (
+          <MobileListCard
+            key={`${defaulter.name}-${defaulter.room}`}
+            title={defaulter.name}
+            meta={`Room ${defaulter.room}`}
+            value={<MoneyValue amount={defaulter.amountDue} size="sm" />}
+            status={<StatusBadge status={defaulter.daysOverdue > 15 ? "OVERDUE" : "PENDING"} />}
+          >
+            <span className="text-xs font-medium text-muted-foreground">
+              {defaulter.daysOverdue} day{defaulter.daysOverdue === 1 ? "" : "s"} overdue
+            </span>
+          </MobileListCard>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function AnnualSummary({ annual }: { annual: AnnualReport | null | undefined }) {
+  if (!annual) {
+    return null;
+  }
+
+  return (
+    <Card className="shadow-card">
+      <CardHeader className="border-b border-border p-5">
+        <CardTitle className="text-lg">{annual.financialYear} Summary</CardTitle>
+      </CardHeader>
+      <CardContent className="p-5">
+        <RentLedgerStrip
+          monthLabel="Annual ledger"
+          items={[
+            { id: "expected", label: "Expected", value: annual.totals.expected, isMoney: true },
+            { id: "collected", label: "Collected", value: annual.totals.collected, isMoney: true, color: "success" },
+            { id: "outstanding", label: "Outstanding", value: annual.totals.outstanding, isMoney: true, color: "warning" },
+            { id: "months", label: "Months", value: annual.monthly.length }
+          ]}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReportBody({ report, annual }: { report: MonthlyReport; annual: AnnualReport | null | undefined }) {
+  return (
+    <>
+      <RentLedgerStrip
+        monthLabel={`${report.period} ledger`}
+        className="rounded-lg border border-border bg-card p-5 shadow-card"
+        items={[
+          { id: "expected", label: "Expected", value: report.income.netExpected, isMoney: true },
+          { id: "collected", label: "Collected", value: report.income.totalCollected, isMoney: true, color: "success" },
+          { id: "outstanding", label: "Outstanding", value: report.income.totalOutstanding, isMoney: true, color: "warning" },
+          { id: "rate", label: "Collection", value: `${report.income.collectionRate}%`, color: report.income.collectionRate >= 85 ? "success" : "warning" }
+        ]}
+      />
+      <SummaryMetrics report={report} />
+      <section className="grid gap-6 lg:grid-cols-2">
+        <PaymentsBreakdown report={report} />
+        <OccupancyCard report={report} />
+      </section>
+      <DefaultersCard report={report} />
+      <AnnualSummary annual={annual} />
+    </>
+  );
+}
+
+export default function ReportsPage() {
+  const { authorized } = useRequireRoles(["OWNER", "STAFF"]);
+  const { activeProperty } = useProperty();
+  const now = useMemo(() => new Date(), []);
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
+  const { data: report, loading } = useApi<MonthlyReport>(reportUrl(activeProperty?.id, month, year));
+  const { data: annual } = useApi<AnnualReport>(annualUrl(activeProperty?.id, year));
 
-  const url = activeProperty
-    ? `/properties/${activeProperty.id}/reports/monthly?month=${month}&year=${year}`
-    : null;
-  const { data: report, loading } = useApi<any>(url);
+  async function exportMonthly() {
+    if (!activeProperty || !report) return;
+
+    const blob = await fetchApiBlob(`/properties/${activeProperty.id}/reports/monthly/export?month=${month}&year=${year}`);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `tenantease-${year}-${String(month).padStart(2, "0")}-report.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   if (!authorized) return null;
 
   return (
     <DashboardLayout activePath="/reports">
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Reports & Analytics
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Monthly financial overview and performance metrics.
-            </p>
-          </div>
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          title="Reports"
+          description={activeProperty ? `${activeProperty.name} monthly and annual performance.` : "Select a property to view financial reports."}
+          actions={
+            <PeriodControls
+              month={month}
+              setMonth={setMonth}
+              year={year}
+              setYear={setYear}
+              onExport={exportMonthly}
+              exportDisabled={!activeProperty || !report}
+            />
+          }
+        />
 
-          {/* Month/Year Selector */}
-          <div className="flex gap-3">
-            <select
-              value={month}
-              onChange={(e) => setMonth(parseInt(e.target.value, 10))}
-              className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
-            >
-              {MONTHS.map((m, i) => (
-                <option key={i} value={i + 1}>{m}</option>
-              ))}
-            </select>
-            <select
-              value={year}
-              onChange={(e) => setYear(parseInt(e.target.value, 10))}
-              className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
-            >
-              {[2024, 2025, 2026, 2027].map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-          </div>
-        ) : !report ? (
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              No report data available. Select a property and period.
-            </CardContent>
-          </Card>
-        ) : (
-          <>
-            {/* Period Header */}
-            <div className="text-lg font-semibold text-foreground">{report.period}</div>
-
-            {/* KPI Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card>
-                <CardContent className="pt-5 pb-4">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Expected</div>
-                  <div className="text-2xl font-bold text-foreground mt-1">{formatPaisa(report.income?.netExpected ?? 0)}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-5 pb-4">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Collected</div>
-                  <div className="text-2xl font-bold text-green-600 mt-1">{formatPaisa(report.income?.totalCollected ?? 0)}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-5 pb-4">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Outstanding</div>
-                  <div className="text-2xl font-bold text-orange-500 mt-1">{formatPaisa(report.income?.totalOutstanding ?? 0)}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-5 pb-4">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Collection Rate</div>
-                  <div className="text-2xl font-bold text-primary mt-1">{report.income?.collectionRate ?? 0}%</div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Payments & Occupancy Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Payments Breakdown */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-green-500" />
-                    Payments by Mode
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {[
-                      { label: "Cash", value: report.payments?.cash ?? 0, color: "bg-emerald-500" },
-                      { label: "UPI", value: report.payments?.upi ?? 0, color: "bg-blue-500" },
-                      { label: "Bank Transfer", value: report.payments?.bankTransfer ?? 0, color: "bg-purple-500" },
-                      { label: "Online", value: report.payments?.online ?? 0, color: "bg-orange-500" },
-                    ].map((item) => {
-                      const total = report.payments?.total || 1;
-                      const pct = Math.round((item.value / total) * 100) || 0;
-                      return (
-                        <div key={item.label} className="space-y-1">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">{item.label}</span>
-                            <span className="font-medium">{formatPaisa(item.value)}</span>
-                          </div>
-                          <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                            <div className={`h-full ${item.color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Occupancy */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <BedDouble className="w-4 h-4 text-blue-500" />
-                    Occupancy
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-center">
-                      <div className="relative w-32 h-32">
-                        <svg className="w-full h-full" viewBox="0 0 36 36">
-                          <path
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                            fill="none" stroke="hsl(var(--secondary))" strokeWidth="3"
-                          />
-                          <path
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                            fill="none" stroke="hsl(var(--primary))" strokeWidth="3"
-                            strokeDasharray={`${report.occupancy?.occupancyRate ?? 0}, 100`}
-                          />
-                        </svg>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center">
-                          <span className="text-2xl font-bold text-foreground">{report.occupancy?.occupancyRate ?? 0}%</span>
-                          <span className="text-[10px] text-muted-foreground uppercase">Occupied</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div>
-                        <div className="text-lg font-bold text-foreground">{report.occupancy?.totalRooms ?? 0}</div>
-                        <div className="text-[10px] text-muted-foreground uppercase">Rooms</div>
-                      </div>
-                      <div>
-                        <div className="text-lg font-bold text-green-600">{report.occupancy?.occupiedBeds ?? 0}</div>
-                        <div className="text-[10px] text-muted-foreground uppercase">Occupied</div>
-                      </div>
-                      <div>
-                        <div className="text-lg font-bold text-orange-500">{report.occupancy?.vacantBeds ?? 0}</div>
-                        <div className="text-[10px] text-muted-foreground uppercase">Vacant</div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Defaulters */}
-            {report.defaulters && report.defaulters.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-destructive" />
-                    Defaulters
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
-                          <th className="text-left py-2 pr-4">Tenant</th>
-                          <th className="text-left py-2 px-4">Room</th>
-                          <th className="text-right py-2 px-4">Amount Due</th>
-                          <th className="text-right py-2 pl-4">Days Overdue</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {report.defaulters.map((d: any, i: number) => (
-                          <tr key={i} className="border-b border-border/40">
-                            <td className="py-2.5 pr-4 font-medium">{d.name}</td>
-                            <td className="py-2.5 px-4"><Badge variant="outline">{d.room}</Badge></td>
-                            <td className="py-2.5 px-4 text-right font-semibold text-destructive">{formatPaisa(d.amountDue)}</td>
-                            <td className="py-2.5 pl-4 text-right">
-                              <Badge variant={d.daysOverdue > 15 ? "destructive" : "secondary"}>
-                                {d.daysOverdue} days
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Paid vs Unpaid */}
-            <div className="grid grid-cols-2 gap-4">
-              <Card>
-                <CardContent className="pt-5 pb-4 flex flex-col items-center">
-                  <Users className="w-5 h-5 text-green-500 mb-2" />
-                  <span className="text-2xl font-bold text-green-600">{report.income?.tenantsPaid ?? 0}</span>
-                  <span className="text-xs text-muted-foreground uppercase mt-1">Tenants Paid</span>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-5 pb-4 flex flex-col items-center">
-                  <Users className="w-5 h-5 text-orange-500 mb-2" />
-                  <span className="text-2xl font-bold text-orange-500">{report.income?.tenantsUnpaid ?? 0}</span>
-                  <span className="text-xs text-muted-foreground uppercase mt-1">Tenants Unpaid</span>
-                </CardContent>
-              </Card>
-            </div>
-          </>
-        )}
+        {loading ? <ReportLoading /> : null}
+        {!loading && !report ? (
+          <EmptyState
+            title="No report data"
+            description="Generate rent or select another period to see reporting."
+            icon={<IndianRupee className="h-6 w-6" />}
+          />
+        ) : null}
+        {!loading && report ? <ReportBody report={report} annual={annual} /> : null}
       </div>
     </DashboardLayout>
   );

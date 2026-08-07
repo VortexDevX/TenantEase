@@ -7,7 +7,11 @@
     "dev:api": "corepack pnpm --filter @tenantease/api dev",
     "dev:web": "corepack pnpm --filter @tenantease/web dev",
     "build": "corepack pnpm -r build",
+    "start": "corepack pnpm --parallel --filter @tenantease/api --filter @tenantease/web start",
+    "start:api": "corepack pnpm --filter @tenantease/api start",
+    "start:web": "corepack pnpm --filter @tenantease/web start",
     "lint": "corepack pnpm -r lint",
+    "audit:prod": "node scripts/audit-production.mjs",
     "typecheck": "corepack pnpm -r typecheck",
     "test": "corepack pnpm -r test",
     "test:api": "corepack pnpm --filter @tenantease/api test",
@@ -19,6 +23,7 @@
   "pnpm": {
     "overrides": {
       "@hono/node-server": ">=1.19.13",
+      "hono": ">=4.12.25",
       "defu": "^6.1.5",
       "fast-uri": "^3.1.2",
       "postcss": "^8.5.10"

@@ -1,11 +1,11 @@
 import { FastifyInstance } from "fastify";
+import type { FastifyRequest } from "fastify";
 import { z } from "zod";
-import { requireOwnerProfileId } from "../../lib/auth-guards.js";
+import { assertPropertyAccess, assertTenantAccess } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
 import { storageProvider } from "../../providers/mock-providers.js";
-import { assertTenantOwnership } from "../common/owner.js";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 const createAgreementSchema = z.object({
@@ -17,14 +17,35 @@ const createAgreementSchema = z.object({
   customClauses: z.array(z.string()).default([]),
 });
 
+async function assertTenantAgreementAccess(request: FastifyRequest, tenantId: string, permission: "agreement:read" | "agreement:write") {
+  if (request.user.role === "TENANT") {
+    if (request.user.tenantId !== tenantId || permission !== "agreement:read") {
+      throw new AppError(403, "AUTH_FORBIDDEN", "Tenant can only read their own agreements");
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, propertyId: true, roomId: true }
+    });
+
+    if (!tenant) {
+      throw new AppError(404, "TENANT_NOT_FOUND", "Tenant not found");
+    }
+
+    return { tenant, ownerProfileId: null, propertyId: tenant.propertyId, staffRole: null };
+  }
+
+  return assertTenantAccess(request, tenantId, permission);
+}
+
 export async function agreementRoutes(app: FastifyInstance) {
 
   // ─── POST /tenants/:tenantId/agreements ───
   // Generate a rental agreement PDF for a tenant
-  app.post("/tenants/:tenantId/agreements", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.post("/tenants/:tenantId/agreements", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
     const body = createAgreementSchema.parse(request.body);
-    await assertTenantOwnership(tenantId, requireOwnerProfileId(request.user.ownerProfileId));
+    await assertTenantAgreementAccess(request, tenantId, "agreement:write");
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -194,9 +215,9 @@ export async function agreementRoutes(app: FastifyInstance) {
 
   // ─── GET /tenants/:tenantId/agreements ───
   // List agreements for a tenant
-  app.get("/tenants/:tenantId/agreements", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get("/tenants/:tenantId/agreements", { preHandler: [app.authenticateAny] }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
-    await assertTenantOwnership(tenantId, requireOwnerProfileId(request.user.ownerProfileId));
+    await assertTenantAgreementAccess(request, tenantId, "agreement:read");
 
     const agreements = await prisma.agreement.findMany({
       where: { tenantId },
@@ -222,19 +243,26 @@ export async function agreementRoutes(app: FastifyInstance) {
 
   // ─── GET /agreements/:agreementId/download ───
   // Download agreement PDF
-  app.get("/agreements/:agreementId/download", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get("/agreements/:agreementId/download", { preHandler: [app.authenticateAny] }, async (request, reply) => {
     const { agreementId } = request.params as { agreementId: string };
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
 
     const agreement = await prisma.agreement.findUnique({
       where: { id: agreementId },
       include: {
-        property: true,
+        property: true
       },
     });
 
-    if (!agreement || !agreement.pdfPath || agreement.property.ownerProfileId !== ownerProfileId) {
+    if (!agreement || !agreement.pdfPath) {
       throw new AppError(404, "NOT_FOUND", "Agreement not found");
+    }
+
+    if (request.user.role === "TENANT") {
+      if (request.user.tenantId !== agreement.tenantId) {
+        throw new AppError(404, "NOT_FOUND", "Agreement not found");
+      }
+    } else {
+      await assertPropertyAccess(request, agreement.propertyId, "agreement:read");
     }
 
     let pdfBuffer: Buffer;

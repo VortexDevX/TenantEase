@@ -218,45 +218,46 @@ export async function maintenanceRoutes(app: FastifyInstance) {
       );
     }
 
-    const updated = await prisma.maintenanceRequest.update({
-      where: { id: params.id },
-      data: {
-        status: body.status,
-        assignedWorkerName: body.assignedWorkerName,
-        assignedWorkerPhone: body.assignedWorkerPhone,
-        resolutionNotes: body.resolutionNotes
-      },
-      include: {
-        tenant: {
-          include: {
-            room: true
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.maintenanceRequest.update({
+        where: { id: params.id },
+        data: {
+          status: body.status,
+          assignedWorkerName: body.assignedWorkerName,
+          assignedWorkerPhone: body.assignedWorkerPhone,
+          resolutionNotes: body.resolutionNotes
+        },
+        include: {
+          tenant: {
+            include: { room: true }
           }
         }
+      });
+
+      if (body.comment) {
+        await tx.maintenanceComment.create({
+          data: {
+            requestId: result.id,
+            authorUserId: request.user.sub,
+            content: body.comment,
+            isInternal: body.isInternalNote ?? false
+          }
+        });
       }
+
+      if (body.status && body.status !== current.status) {
+        await tx.maintenanceStatusChange.create({
+          data: {
+            requestId: result.id,
+            fromStatus: current.status,
+            toStatus: body.status,
+            changedByUserId: request.user.sub,
+            note: body.comment ?? body.resolutionNotes ?? null
+          }
+        });
+      }
+      return result;
     });
-
-    if (body.comment) {
-      await prisma.maintenanceComment.create({
-        data: {
-          requestId: updated.id,
-          authorUserId: request.user.sub,
-          content: body.comment,
-          isInternal: body.isInternalNote ?? false
-        }
-      });
-    }
-
-    if (body.status && body.status !== current.status) {
-      await prisma.maintenanceStatusChange.create({
-        data: {
-          requestId: updated.id,
-          fromStatus: current.status,
-          toStatus: body.status,
-          changedByUserId: request.user.sub,
-          note: body.comment ?? body.resolutionNotes ?? null
-        }
-      });
-    }
 
     await createAuditLog({
       userId: request.user.sub,
@@ -320,28 +321,26 @@ export async function maintenanceRoutes(app: FastifyInstance) {
       );
     }
 
-    const updated = await prisma.maintenanceRequest.update({
-      where: { id: current.id },
-      data: {
-        status: "CLOSED"
-      },
-      include: {
-        tenant: {
-          include: {
-            room: true
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.maintenanceRequest.update({
+        where: { id: current.id },
+        data: { status: "CLOSED" },
+        include: {
+          tenant: {
+            include: { room: true }
           }
         }
-      }
-    });
-
-    await prisma.maintenanceStatusChange.create({
-      data: {
-        requestId: updated.id,
-        fromStatus: current.status,
-        toStatus: "CLOSED",
-        changedByUserId: request.user.sub,
-        note: "Request closed"
-      }
+      });
+      await tx.maintenanceStatusChange.create({
+        data: {
+          requestId: result.id,
+          fromStatus: current.status,
+          toStatus: "CLOSED",
+          changedByUserId: request.user.sub,
+          note: "Request closed"
+        }
+      });
+      return result;
     });
 
     await createAuditLog({

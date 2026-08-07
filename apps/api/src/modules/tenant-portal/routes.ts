@@ -16,6 +16,15 @@ const tenantMaintenanceSchema = z.object({
   preferredTime: z.string().max(30).optional().nullable()
 });
 
+const offlinePaymentSchema = z.object({
+  idempotencyKey: z.string().uuid(),
+  rentEntryId: z.string().uuid(),
+  amount: z.number().int().min(1),
+  mode: z.enum(["CASH", "UPI", "BANK_TRANSFER"]),
+  referenceNumber: z.string().trim().max(100).optional().nullable(),
+  note: z.string().trim().max(255).optional().nullable()
+});
+
 export async function tenantPortalRoutes(app: FastifyInstance) {
   app.get("/tenant-portal/home", { preHandler: [app.authenticateTenant] }, async (request) => {
     const tenantId = requireTenantId(request.user.tenantId);
@@ -98,6 +107,98 @@ export async function tenantPortalRoutes(app: FastifyInstance) {
     });
 
     return ok(entries.map(toRentEntryDto));
+  });
+
+  app.post("/tenant-portal/payments/offline", { preHandler: [app.authenticateTenant] }, async (request, reply) => {
+    const body = offlinePaymentSchema.parse(request.body);
+    const tenantId = requireTenantId(request.user.tenantId);
+    const rentEntry = await prisma.rentEntry.findFirst({
+      where: { id: body.rentEntryId, tenantId },
+      include: {
+        tenant: {
+          include: {
+            room: true,
+            property: {
+              include: {
+                ownerProfile: { select: { userId: true } }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!rentEntry) {
+      throw new AppError(404, "RENT_ENTRY_NOT_FOUND", "Rent entry not found");
+    }
+
+    const pending = Math.max(0, rentEntry.amountDue - rentEntry.amountPaid);
+    if (pending <= 0) {
+      throw new AppError(422, "VALIDATION_ERROR", "Rent entry is already paid");
+    }
+
+    if (body.amount > pending) {
+      throw new AppError(422, "VALIDATION_ERROR", "Payment amount cannot exceed pending balance");
+    }
+
+    const modeLabel = body.mode === "BANK_TRANSFER" ? "bank transfer" : body.mode.toLowerCase();
+    const noteParts = [
+      `${rentEntry.tenant.fullName} reported ${modeLabel} payment for ${rentEntry.billingMonth}.`,
+      `Amount: INR ${(body.amount / 100).toFixed(2)}.`,
+      body.referenceNumber ? `Reference: ${body.referenceNumber}.` : null,
+      body.note ? `Note: ${body.note}` : null
+    ].filter(Boolean);
+
+    const claim = await prisma.$transaction(async (tx) => {
+      const existing = await tx.offlinePaymentClaim.findUnique({ where: { idempotencyKey: body.idempotencyKey } });
+      if (existing) {
+        if (existing.tenantId !== tenantId || existing.rentEntryId !== rentEntry.id || existing.amount !== body.amount || existing.mode !== body.mode) {
+          throw new AppError(409, "VALIDATION_ERROR", "Idempotency key was already used for another payment report");
+        }
+        return existing;
+      }
+
+      const created = await tx.offlinePaymentClaim.create({
+        data: {
+          idempotencyKey: body.idempotencyKey,
+          propertyId: rentEntry.tenant.propertyId,
+          tenantId,
+          rentEntryId: rentEntry.id,
+          amount: body.amount,
+          mode: body.mode,
+          referenceNumber: body.referenceNumber,
+          note: body.note
+        }
+      });
+      await tx.notification.create({
+        data: {
+          propertyId: rentEntry.tenant.propertyId,
+          userId: rentEntry.tenant.property.ownerProfile.userId,
+          title: "Tenant payment update",
+          content: noteParts.join(" "),
+          category: "PAYMENT"
+        }
+      });
+      return created;
+    });
+
+    await createAuditLog({
+      userId: request.user.sub,
+      action: "tenant.payment_notify",
+      resource: "RentEntry",
+      resourceId: rentEntry.id,
+      payload: body,
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
+
+    return reply.status(201).send(ok({
+      rentEntryId: rentEntry.id,
+      claimId: claim.id,
+      amount: body.amount,
+      mode: body.mode,
+      message: "Payment update sent to owner for confirmation."
+    }));
   });
 
   // 2. View Maintenance Requests

@@ -2,15 +2,17 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { fetchApi } from "@/lib/api-client";
 import { Loader2, X } from "lucide-react";
+import { useAccessibleDialog } from "@/lib/useAccessibleDialog";
 
 interface CreateMaintenanceRequestModalProps {
-  propertyId: string;
-  tenantId: string;
+  propertyId?: string;
+  tenantId?: string;
   onClose: () => void;
   onSuccess: () => void;
 }
 
 export function CreateMaintenanceRequestModal({ propertyId, tenantId, onClose, onSuccess }: CreateMaintenanceRequestModalProps) {
+  const dialogRef = useAccessibleDialog(onClose);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,13 +29,10 @@ export function CreateMaintenanceRequestModal({ propertyId, tenantId, onClose, o
     setError(null);
 
     try {
-      await fetchApi(`/maintenance`, {
+      const isTenantRequest = !propertyId || !tenantId;
+      await fetchApi(isTenantRequest ? "/tenant-portal/maintenance" : "/maintenance", {
         method: "POST",
-        body: JSON.stringify({
-          ...formData,
-          propertyId,
-          tenantId,
-        }),
+        body: JSON.stringify(isTenantRequest ? formData : { ...formData, propertyId, tenantId }),
       });
       onSuccess();
     } catch (err: any) {
@@ -44,11 +43,11 @@ export function CreateMaintenanceRequestModal({ propertyId, tenantId, onClose, o
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in overflow-y-auto">
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="maintenance-dialog-title" tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in overflow-y-auto">
       <div className="bg-card w-full max-w-md rounded-2xl shadow-float border border-border overflow-hidden animate-slide-up my-auto">
         <div className="flex justify-between items-center p-4 border-b border-border bg-secondary/30">
-           <h2 className="font-bold text-lg text-foreground tracking-tight">Raise Maintenance Request</h2>
-           <button onClick={onClose} className="p-1.5 text-muted-foreground hover:bg-background rounded-full transition-colors">
+           <h2 id="maintenance-dialog-title" className="font-bold text-lg text-foreground tracking-tight">Raise Maintenance Request</h2>
+           <button type="button" onClick={onClose} className="p-1.5 text-muted-foreground hover:bg-background rounded-full transition-colors" aria-label="Close maintenance form">
               <X size={18} />
            </button>
         </div>
@@ -62,23 +61,25 @@ export function CreateMaintenanceRequestModal({ propertyId, tenantId, onClose, o
 
            <div className="grid grid-cols-2 gap-4">
              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold">Category</label>
+                <label htmlFor="maintenance-category" className="text-sm font-semibold">Category</label>
                 <select 
+                  id="maintenance-category"
                   className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                   value={formData.category} 
                   onChange={e => setFormData({...formData, category: e.target.value})}
                 >
                   <option value="PLUMBING">Plumbing</option>
                   <option value="ELECTRICAL">Electrical</option>
-                  <option value="CARPENTRY">Carpentry</option>
-                  <option value="APPLIANCES">Appliances</option>
+                  <option value="FURNITURE">Furniture</option>
+                  <option value="INTERNET">Internet</option>
                   <option value="CLEANING">Cleaning</option>
                   <option value="OTHER">Other</option>
                 </select>
              </div>
              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold">Urgency</label>
+                <label htmlFor="maintenance-urgency" className="text-sm font-semibold">Urgency</label>
                  <select 
+                  id="maintenance-urgency"
                   className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                   value={formData.urgency} 
                   onChange={e => setFormData({...formData, urgency: e.target.value})}
@@ -92,8 +93,9 @@ export function CreateMaintenanceRequestModal({ propertyId, tenantId, onClose, o
            </div>
 
            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-semibold">Description</label>
+              <label htmlFor="maintenance-description" className="text-sm font-semibold">Description</label>
               <textarea 
+                id="maintenance-description"
                 required 
                 rows={3}
                 className="flex w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
@@ -104,8 +106,9 @@ export function CreateMaintenanceRequestModal({ propertyId, tenantId, onClose, o
            </div>
 
            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-semibold">Preferred Time (Optional)</label>
+              <label htmlFor="maintenance-preferred-time" className="text-sm font-semibold">Preferred Time (Optional)</label>
               <input 
+                id="maintenance-preferred-time"
                 type="text"
                 className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                 value={formData.preferredTime} 

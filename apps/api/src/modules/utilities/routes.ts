@@ -1,20 +1,15 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { requireOwnerProfileId } from "../../lib/auth-guards.js";
+import { assertPropertyAccess } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
-import { assertPropertyOwnership } from "../common/owner.js";
+import { parseRentCharges, replaceRentCharge, sumRentCharges } from "../rent/charges.js";
 import { computeRentStatus } from "../rent/service.js";
+import { allocateUtilityCharges } from "./service.js";
 
 const UtilityTypeEnum = z.enum(["ELECTRICITY", "WATER", "GAS", "INTERNET"]);
 const BillingModelEnum = z.enum(["FLAT_RATE", "PER_TENANT", "INDIVIDUAL_METER", "SHARED_METER"]);
-
-type UtilityCharge = {
-  type: z.infer<typeof UtilityTypeEnum>;
-  amount: number;
-  details?: string;
-};
 
 const utilityQuerySchema = z.object({
   month: z.coerce.number().int().min(1).max(12).optional(),
@@ -39,10 +34,10 @@ export async function utilityRoutes(app: FastifyInstance) {
 
   // ─── GET /properties/:propertyId/utilities ───
   // Returns utility readings for a property, filtered by month/year/type
-  app.get("/properties/:propertyId/utilities", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get("/properties/:propertyId/utilities", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
     const query = utilityQuerySchema.parse(request.query);
-    await assertPropertyOwnership(propertyId, requireOwnerProfileId(request.user.ownerProfileId));
+    await assertPropertyAccess(request, propertyId, "utility:read");
 
     const now = new Date();
     const month = query.month ?? now.getMonth() + 1;
@@ -86,175 +81,159 @@ export async function utilityRoutes(app: FastifyInstance) {
 
   // ─── POST /properties/:propertyId/utilities ───
   // Submit meter readings, compute charges, and apply to rent entries
-  app.post("/properties/:propertyId/utilities", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.post("/properties/:propertyId/utilities", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const { propertyId } = request.params as { propertyId: string };
     const body = submitReadingsSchema.parse(request.body);
-    await assertPropertyOwnership(propertyId, requireOwnerProfileId(request.user.ownerProfileId));
+    await assertPropertyAccess(request, propertyId, "utility:write");
 
-    const results: Array<{
-      room: string;
-      roomId: string;
-      units: number;
-      charge: number;
-    }> = [];
+    const roomIds = body.readings.map((reading) => reading.roomId);
+    if (new Set(roomIds).size !== roomIds.length) {
+      throw new AppError(400, "VALIDATION_ERROR", "Each room may appear only once per utility submission");
+    }
 
-    let totalUnits = 0;
-    let totalCharge = 0;
-
-    for (const reading of body.readings) {
-      // Validate room belongs to property
-      const room = await prisma.room.findFirst({
-        where: { id: reading.roomId, propertyId },
+    const billingMonth = `${body.year}-${String(body.month).padStart(2, "0")}`;
+    const result = await prisma.$transaction(async (tx) => {
+      const rooms = await tx.room.findMany({
+        where: { id: { in: roomIds }, propertyId },
+        include: {
+          tenants: {
+            where: { status: { in: ["ACTIVE", "NOTICE"] } },
+            select: { id: true }
+          }
+        }
       });
-      if (!room) {
-        throw new AppError(400, "VALIDATION_ERROR", `Room ${reading.roomId} not found in this property`);
+      if (rooms.length !== roomIds.length) {
+        throw new AppError(400, "VALIDATION_ERROR", "One or more rooms do not belong to this property");
       }
 
-      // Auto-fill previous reading from last month if not provided
-      let prevReading = reading.previousReading ?? 0;
-      if (reading.previousReading === undefined) {
-        const lastMonth = body.month === 1 ? 12 : body.month - 1;
-        const lastYear = body.month === 1 ? body.year - 1 : body.year;
-        const prev = await prisma.utilityReading.findUnique({
+      const roomsById = new Map(rooms.map((room) => [room.id, room]));
+      const calculated = [];
+      for (const reading of body.readings) {
+        const room = roomsById.get(reading.roomId)!;
+        let previousReading = reading.previousReading ?? 0;
+        if (reading.previousReading === undefined) {
+          const lastMonth = body.month === 1 ? 12 : body.month - 1;
+          const lastYear = body.month === 1 ? body.year - 1 : body.year;
+          const previous = await tx.utilityReading.findUnique({
+            where: {
+              propertyId_roomId_utilityType_month_year: {
+                propertyId,
+                roomId: reading.roomId,
+                utilityType: body.utilityType,
+                month: lastMonth,
+                year: lastYear
+              }
+            }
+          });
+          previousReading = previous?.currentReading ?? 0;
+        }
+        if (reading.currentReading < previousReading) {
+          throw new AppError(400, "VALIDATION_ERROR",
+            `Current reading must be at least ${previousReading} for room ${room.roomNumber}`);
+        }
+        const units = reading.currentReading - previousReading;
+        const meterCharge = units * body.ratePerUnit;
+        calculated.push({ reading, room, previousReading, units, meterCharge });
+      }
+
+      const allocations = allocateUtilityCharges(
+        body.billingModel,
+        body.ratePerUnit,
+        calculated.map((item) => ({
+          roomId: item.room.id,
+          tenantIds: item.room.tenants.map((tenant) => tenant.id),
+          meterCharge: item.meterCharge
+        }))
+      );
+
+      for (const item of calculated) {
+        const roomCharge = body.billingModel === "PER_TENANT"
+          ? item.room.tenants.length * body.ratePerUnit
+          : body.billingModel === "FLAT_RATE"
+            ? body.ratePerUnit
+            : item.meterCharge;
+        await tx.utilityReading.upsert({
           where: {
             propertyId_roomId_utilityType_month_year: {
               propertyId,
-              roomId: reading.roomId,
+              roomId: item.room.id,
               utilityType: body.utilityType,
-              month: lastMonth,
-              year: lastYear,
-            },
+              month: body.month,
+              year: body.year
+            }
           },
-        });
-        if (prev?.currentReading !== undefined && prev.currentReading !== null) {
-          prevReading = prev.currentReading;
-        }
-      }
-
-      // Validate current >= previous
-      if (reading.currentReading < prevReading) {
-        throw new AppError(400, "VALIDATION_ERROR",
-          `Current reading (${reading.currentReading}) must be >= previous reading (${prevReading}) for room ${room.roomNumber}`);
-      }
-
-      const units = reading.currentReading - prevReading;
-      const charge = units * body.ratePerUnit;
-
-      totalUnits += units;
-      totalCharge += charge;
-
-      // Upsert the utility reading
-      await prisma.utilityReading.upsert({
-        where: {
-          propertyId_roomId_utilityType_month_year: {
+          create: {
             propertyId,
-            roomId: reading.roomId,
+            roomId: item.room.id,
             utilityType: body.utilityType,
             month: body.month,
             year: body.year,
+            previousReading: item.previousReading,
+            currentReading: item.reading.currentReading,
+            unitsConsumed: item.units,
+            ratePerUnit: body.ratePerUnit,
+            totalCharge: roomCharge,
+            billingModel: body.billingModel
           },
-        },
-        create: {
-          propertyId,
-          roomId: reading.roomId,
-          utilityType: body.utilityType,
-          month: body.month,
-          year: body.year,
-          previousReading: prevReading,
-          currentReading: reading.currentReading,
-          unitsConsumed: units,
-          ratePerUnit: body.ratePerUnit,
-          totalCharge: charge,
-          billingModel: body.billingModel,
-        },
-        update: {
-          previousReading: prevReading,
-          currentReading: reading.currentReading,
-          unitsConsumed: units,
-          ratePerUnit: body.ratePerUnit,
-          totalCharge: charge,
-          billingModel: body.billingModel,
-        },
-      });
-
-      // Apply charge to tenant rent entries for this room/month
-      const billingMonth = `${body.year}-${String(body.month).padStart(2, "0")}`;
-      const tenants = await prisma.tenant.findMany({
-        where: { roomId: reading.roomId, status: "ACTIVE" },
-      });
-
-      for (const tenant of tenants) {
-        const rentEntry = await prisma.rentEntry.findUnique({
-          where: { tenantId_billingMonth: { tenantId: tenant.id, billingMonth } },
+          update: {
+            previousReading: item.previousReading,
+            currentReading: item.reading.currentReading,
+            unitsConsumed: item.units,
+            ratePerUnit: body.ratePerUnit,
+            totalCharge: roomCharge,
+            billingModel: body.billingModel
+          }
         });
-
-        if (rentEntry) {
-          // Merge utility charge into existing utilityCharges array
-          const existing = parseUtilityCharges(rentEntry.utilityCharges);
-          const filtered = existing.filter((charge) => charge.type !== body.utilityType);
-          filtered.push({
-            type: body.utilityType,
-            amount: charge,
-            details: `${units} units @ ₹${(body.ratePerUnit / 100).toFixed(2)}/unit`,
-          });
-
-          const utilityTotal = filtered.reduce((sum: number, c: any) => sum + c.amount, 0);
-          const newTotal = rentEntry.amountDue - sumUtilityCharges(existing) + utilityTotal;
-
-          await prisma.rentEntry.update({
-            where: { id: rentEntry.id },
-            data: {
-              utilityCharges: filtered,
-              amountDue: newTotal,
-              status: computeRentStatus(newTotal, rentEntry.amountPaid, rentEntry.dueDate),
-            },
-          });
-        }
       }
 
-      results.push({
-        room: room.roomNumber,
-        roomId: room.id,
-        units,
-        charge,
-      });
-    }
+      let appliedToRentEntries = 0;
+      for (const allocation of allocations) {
+        const rentEntry = await tx.rentEntry.findUnique({
+          where: { tenantId_billingMonth: { tenantId: allocation.tenantId, billingMonth } }
+        });
+        if (!rentEntry) continue;
+        const existing = parseRentCharges(rentEntry.utilityCharges);
+        const nextCharges = replaceRentCharge(existing, {
+          sourceKey: `utility:${body.utilityType}:${billingMonth}`,
+          type: body.utilityType,
+          amount: allocation.amount,
+          details: `${body.billingModel} allocation`
+        });
+        const baseRent = rentEntry.amountDue - sumRentCharges(existing);
+        const newTotal = baseRent + sumRentCharges(nextCharges);
+        await tx.rentEntry.update({
+          where: { id: rentEntry.id },
+          data: {
+            utilityCharges: nextCharges,
+            amountDue: newTotal,
+            status: computeRentStatus(newTotal, rentEntry.amountPaid, rentEntry.dueDate)
+          }
+        });
+        appliedToRentEntries++;
+      }
+
+      return {
+        readings: calculated.map((item) => ({
+          room: item.room.roomNumber,
+          roomId: item.room.id,
+          units: item.units,
+          charge: item.meterCharge
+        })),
+        totalUnits: calculated.reduce((sum, item) => sum + item.units, 0),
+        totalCharge: allocations.reduce((sum, item) => sum + item.amount, 0),
+        appliedToRentEntries
+      };
+    }, { isolationLevel: "Serializable" });
 
     return reply.status(201).send(ok({
-      totalRooms: results.length,
-      totalUnits,
-      totalCharge,
-      readings: results,
-      appliedToRentEntries: true,
-      message: `${body.utilityType} charges applied to ${results.length} rooms for ${monthName(body.month)} ${body.year}`,
+      totalRooms: result.readings.length,
+      totalUnits: result.totalUnits,
+      totalCharge: result.totalCharge,
+      readings: result.readings,
+      appliedToRentEntries: result.appliedToRentEntries,
+      message: `${body.utilityType} charges allocated to ${result.appliedToRentEntries} rent entries for ${monthName(body.month)} ${body.year}`,
     }));
   });
-}
-
-function parseUtilityCharges(charges: unknown): UtilityCharge[] {
-  if (!Array.isArray(charges)) {
-    return [];
-  }
-
-  return charges.flatMap((charge) => {
-    if (
-      typeof charge === "object" &&
-      charge !== null &&
-      "type" in charge &&
-      "amount" in charge &&
-      UtilityTypeEnum.safeParse(charge.type).success &&
-      typeof charge.amount === "number" &&
-      Number.isFinite(charge.amount)
-    ) {
-      return [charge as UtilityCharge];
-    }
-
-    return [];
-  });
-}
-
-function sumUtilityCharges(charges: UtilityCharge[]): number {
-  return charges.reduce((sum, charge) => sum + charge.amount, 0);
 }
 
 function monthName(month: number): string {

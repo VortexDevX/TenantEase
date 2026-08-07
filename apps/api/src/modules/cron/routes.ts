@@ -1,82 +1,69 @@
 import { FastifyInstance } from "fastify";
-import { env } from "../../lib/env.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
+import { monthKey } from "../../lib/date.js";
+import { generateMonthlyRentEntries } from "../rent/service.js";
+import { sendDueReminders } from "../reminders/service.js";
+import { requireCronAuth } from "../../lib/cron-auth.js";
+import { z } from "zod";
 
-// Basic authentication for external cron services if needed
-function cronSecret() {
-  if (env.CRON_SECRET) {
-    return env.CRON_SECRET;
-  }
-
-  if (env.NODE_ENV === "production") {
-    throw new AppError(500, "CONFIG_ERROR", "CRON_SECRET is required in production");
-  }
-
-  return "local_dev_cron_secret";
-}
+const cronRentSchema = z.object({
+  billingMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional()
+});
 
 export async function cronRoutes(app: FastifyInstance) {
   app.post("/cron/reminders", async (request, reply) => {
-    
-    // 1. Basic Authorization
     const authHeader = request.headers.authorization;
-    if (authHeader !== `Bearer ${cronSecret()}`) {
-      app.log.warn("Unauthorized CRON execution attempt");
-      throw new AppError(401, "AUTH_FORBIDDEN", "Unauthorized cron access");
-    }
+    requireCronAuth(authHeader);
 
     try {
-      // 2. Find overdue rent entries
-      const today = new Date();
-      const overdueRents = await prisma.rentEntry.findMany({
-        where: {
-          status: { in: ["UNPAID", "PARTIAL", "OVERDUE"] },
-          dueDate: { lt: today }
-        },
-        include: {
-          tenant: true,
-        }
+      const properties = await prisma.property.findMany({
+        select: { id: true }
       });
 
-      // 3. Mock processing reminders
-      const messagesSent: Array<{ tenantId: string; rentEntryId: string; amountPending: number }> = [];
-      
-      for (const rent of overdueRents) {
-        if (!rent.tenant || rent.tenant.status === "VACATED") continue;
-        
-        // Mock sending SMS / Email 
-        app.log.info({
-            event: "MOCK_SEND_REMINDER",
-            tenantId: rent.tenant.id,
-            amountDue: rent.amountDue - rent.amountPaid,
-            rentEntryId: rent.id
-        }, "Sent mock rent reminder");
-
-        messagesSent.push({
-            tenantId: rent.tenant.id,
-            rentEntryId: rent.id,
-            amountPending: rent.amountDue - rent.amountPaid
-        });
-        
-        // If status wasn't exactly OVERDUE, upgrade it to OVERDUE officially since it's past due date
-        if (rent.status !== "OVERDUE") {
-             await prisma.rentEntry.update({
-                 where: { id: rent.id },
-                 data: { status: "OVERDUE" }
-             });
-        }
+      let eligibleCount = 0;
+      let sentCount = 0;
+      for (const property of properties) {
+        const result = await sendDueReminders({ propertyId: property.id });
+        eligibleCount += result.eligibleCount;
+        sentCount += result.sentCount;
       }
 
       return reply.send(ok({ 
-        processed: overdueRents.length, 
-        remindersSent: messagesSent.length,
-        messages: messagesSent 
+        processedProperties: properties.length,
+        eligibleCount,
+        sentCount
       }));
     } catch (e) {
+      if (e instanceof AppError) {
+        throw e;
+      }
       app.log.error(e, "Cron job failed");
       throw new AppError(500, "INTERNAL_ERROR", "Failed to execute cron job");
     }
+  });
+
+  app.post("/cron/rent/generate", async (request, reply) => {
+    const authHeader = request.headers.authorization;
+    requireCronAuth(authHeader);
+
+    const body = cronRentSchema.parse(request.body ?? {});
+    const billingMonth = body.billingMonth ?? monthKey(new Date());
+    const properties = await prisma.property.findMany({
+      select: { id: true, ownerProfileId: true }
+    });
+
+    const results = [];
+    for (const property of properties) {
+      results.push(await generateMonthlyRentEntries(property.id, property.ownerProfileId, billingMonth));
+    }
+
+    return reply.send(ok({
+      billingMonth,
+      processedProperties: properties.length,
+      generatedCount: results.reduce((sum, result) => sum + result.generatedCount, 0),
+      results
+    }));
   });
 }

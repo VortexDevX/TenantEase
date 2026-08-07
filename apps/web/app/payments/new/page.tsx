@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useProperty } from "@/lib/PropertyContext";
 import { useApi } from "@/lib/useApi";
+import { useRequireRoles } from "@/contexts/AuthContext";
 import { fetchApi } from "@/lib/api-client";
 import { formatPaisa } from "@/lib/format";
+import { paisaToRupeesInput, rupeesToPaisa } from "@/lib/money";
 import { IndianRupee, Search, CheckCircle2, ChevronRight, Banknote, CreditCard, Building, Loader2, Send } from "lucide-react";
 import type { TenantDto, RentEntryDto, PaymentWithReceiptDto } from "@tenantease/types";
 
@@ -36,6 +38,8 @@ function RecordPaymentContent() {
   const [generatedReceiptId, setGeneratedReceiptId] = useState<string | null>(null);
   const [sendingReceipt, setSendingReceipt] = useState(false);
   const [receiptSent, setReceiptSent] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const selectedTenant = tenants?.find((t) => t.id === selectedTenantId) ?? null;
 
@@ -47,8 +51,11 @@ function RecordPaymentContent() {
 
   const unpaidEntry = rentEntries?.find((e) => e.status === "UNPAID" || e.status === "PARTIAL" || e.status === "OVERDUE") ?? null;
 
-  // Auto-fill amount from unpaid entry
-  const defaultAmount = unpaidEntry ? (unpaidEntry.amountDue - unpaidEntry.amountPaid) / 100 : 0;
+  useEffect(() => {
+    if (unpaidEntry && !amount) {
+      setAmount(paisaToRupeesInput(unpaidEntry.amountDue - unpaidEntry.amountPaid));
+    }
+  }, [amount, unpaidEntry]);
 
   const searchResults = useMemo(() => {
     if (!tenants || !search.trim()) return [];
@@ -61,15 +68,19 @@ function RecordPaymentContent() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!unpaidEntry || !amount) return;
+    const amountPaisa = rupeesToPaisa(amount);
+    if (!Number.isFinite(amountPaisa) || amountPaisa < 1) return;
 
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const paymentData = await fetchApi<PaymentWithReceiptDto>("/payments", {
         method: "POST",
         body: JSON.stringify({
           rentEntryId: unpaidEntry.id,
-          amount: Math.round(parseFloat(amount) * 100), // convert to paisa
+          amount: amountPaisa,
           mode: method,
+          idempotencyKey: crypto.randomUUID(),
           paidAt: new Date().toISOString(),
           referenceNumber: referenceNumber || null,
         }),
@@ -78,8 +89,7 @@ function RecordPaymentContent() {
       
       setSubmitted(true);
     } catch (err) {
-      // Error state could be enhanced here
-      console.error(err);
+      setSubmitError(err instanceof Error ? err.message : "Unable to record payment.");
     } finally {
       setSubmitting(false);
     }
@@ -95,8 +105,13 @@ function RecordPaymentContent() {
         </div>
         <h2 className="text-2xl font-bold text-foreground">Payment Recorded</h2>
         <p className="text-muted-foreground font-medium">
-          {formatPaisa(Math.round(parseFloat(amount) * 100))} from {selectedTenant?.fullName}
+          {formatPaisa(rupeesToPaisa(amount))} from {selectedTenant?.fullName}
         </p>
+        {sendError ? (
+          <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm font-medium text-destructive">
+            {sendError}
+          </p>
+        ) : null}
         <div className="flex items-center gap-3 mt-4">
            <Button variant="outline" onClick={() => { 
                setSubmitted(false); setSelectedTenantId(null); setAmount(""); setSearch(""); setReferenceNumber("");
@@ -108,11 +123,12 @@ function RecordPaymentContent() {
            {generatedReceiptId && !receiptSent && (
               <Button onClick={async () => {
                  setSendingReceipt(true);
+                 setSendError(null);
                  try {
                      await fetchApi(`/receipts/${generatedReceiptId}/send`, { method: "POST" });
                      setReceiptSent(true);
-                 } catch (e: any) {
-                     alert(e.message || "Failed to send receipt");
+                 } catch (e) {
+                     setSendError(e instanceof Error ? e.message : "Failed to send receipt");
                  } finally {
                      setSendingReceipt(false);
                  }
@@ -148,19 +164,25 @@ function RecordPaymentContent() {
       <Card className="shadow-float border-border/80">
         <CardContent className="p-0 sm:p-4">
            <form className="flex flex-col gap-8 p-6" onSubmit={handleSubmit}>
+              {submitError ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm font-medium text-destructive">
+                  {submitError}
+                </div>
+              ) : null}
               
               {/* Step 1: Select Tenant */}
               <div className="flex flex-col gap-3 animate-slide-up stagger-1">
-                 <label className="text-sm font-semibold text-foreground flex items-center gap-2">
+                 <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
                    <span className="bg-secondary w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span> 
                    Select Tenant
-                 </label>
+                 </h2>
                  
                  {!selectedTenant ? (
                    <>
                      <div className="relative w-full">
                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" size={18} />
                        <Input
+                         aria-label="Search tenants"
                          placeholder="Search Tenant Name or Phone..."
                          className="pl-10 h-12"
                          value={search}
@@ -180,7 +202,7 @@ function RecordPaymentContent() {
                            <button
                              type="button"
                              key={t.id}
-                             onClick={() => { setSelectedTenantId(t.id); setAmount(String((t.monthlyRent) / 100)); setSearch(""); }}
+                             onClick={() => { setSelectedTenantId(t.id); setAmount(paisaToRupeesInput(t.monthlyRent)); setSearch(""); }}
                              className="w-full text-left flex items-center gap-3 p-3 hover:bg-secondary/50 transition-colors border-b border-border last:border-0"
                            >
                              <div className="w-9 h-9 bg-primary/10 text-primary-strong rounded-full flex items-center justify-center font-bold text-sm shrink-0">
@@ -219,7 +241,7 @@ function RecordPaymentContent() {
 
                   {/* Step 2: Payment Details */}
                   <div className="flex flex-col gap-4 animate-slide-up stagger-2">
-                     <label className="text-sm font-semibold text-foreground flex items-center gap-2">
+                     <label htmlFor="payment-amount" className="text-sm font-semibold text-foreground flex items-center gap-2">
                        <span className="bg-secondary w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span> 
                        Payment Amount
                      </label>
@@ -227,6 +249,7 @@ function RecordPaymentContent() {
                      <div className="relative w-full">
                        <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 text-foreground font-bold pointer-events-none" size={20} />
                        <Input 
+                         id="payment-amount"
                          type="number" 
                          value={amount}
                          onChange={(e) => setAmount(e.target.value)}
@@ -242,10 +265,10 @@ function RecordPaymentContent() {
 
                   {/* Step 3: Payment Method */}
                   <div className="flex flex-col gap-3 animate-slide-up stagger-3">
-                     <label className="text-sm font-semibold text-foreground flex items-center gap-2">
+                     <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
                        <span className="bg-secondary w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span> 
                        Payment Method
-                     </label>
+                     </h2>
                      
                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         {([
@@ -273,8 +296,9 @@ function RecordPaymentContent() {
                      </div>
                      {method !== "CASH" && (
                        <div className="flex flex-col gap-2">
-                         <label className="text-sm font-semibold text-foreground">Reference Number</label>
+                         <label htmlFor="payment-reference" className="text-sm font-semibold text-foreground">Reference Number</label>
                          <Input
+                           id="payment-reference"
                            value={referenceNumber}
                            onChange={(e) => setReferenceNumber(e.target.value)}
                            placeholder="UPI transaction ID or bank reference"
@@ -310,10 +334,8 @@ function RecordPaymentContent() {
   );
 }
 
-import { useRequireRole } from "@/contexts/AuthContext";
-
 export default function RecordPayment() {
-  const { authorized } = useRequireRole("OWNER");
+  const { authorized } = useRequireRoles(["OWNER", "STAFF"]);
   if (!authorized) return null;
 
   return (

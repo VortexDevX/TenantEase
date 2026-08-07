@@ -12,6 +12,7 @@ interface UseApiResult<T> {
   loading: boolean;
   error: string | null;
   refetch: () => void;
+  mutate: () => void;
 }
 
 /**
@@ -47,5 +48,5 @@ export function useApi<T>(path: string | null, options?: UseApiOptions): UseApiR
     load();
   }, [load, path]);
 
-  return { data, loading, error, refetch: load };
+  return { data, loading, error, refetch: load, mutate: load };
 }

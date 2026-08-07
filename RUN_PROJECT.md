@@ -5,7 +5,6 @@ This runbook starts TenantEase from a clean checkout on Windows PowerShell. Comm
 ## 0. What Will Run
 
 - PostgreSQL: Docker service on `127.0.0.1:55432`
-- Redis: Docker service on `127.0.0.1:56379`
 - API: Fastify on `http://localhost:4000`
 - Web: Next.js on `http://localhost:3000`
 - Runtime files: `storage/`
@@ -64,10 +63,13 @@ Copy-Item .env.example .env
 Use these local defaults:
 
 ```env
-DATABASE_URL=postgresql://postgres@127.0.0.1:55432/tenantease?schema=public
+NODE_ENV=development
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55432/tenantease?schema=public
+DATABASE_URL_TEST=postgresql://postgres:postgres@127.0.0.1:55432/tenantease_test?schema=public
 JWT_ACCESS_SECRET=replace-with-32-char-secret
 JWT_REFRESH_SECRET=replace-with-32-char-secret
 OTP_PEPPER=replace-with-32-char-secret
+CRON_SECRET=replace-with-32-char-secret
 ADMIN_PHONES=9999999999
 API_PORT=4000
 API_HOST=0.0.0.0
@@ -80,6 +82,20 @@ SMS_SENDER_NAME=TenantEase
 SMS_HTTP_URL=
 SMS_HTTP_AUTH_HEADER=
 SMS_HTTP_AUTH_VALUE=
+EMAIL_PROVIDER=mock
+EMAIL_HTTP_URL=
+EMAIL_HTTP_AUTH_HEADER=
+EMAIL_HTTP_AUTH_VALUE=
+WHATSAPP_PROVIDER=mock
+WHATSAPP_HTTP_URL=
+WHATSAPP_HTTP_AUTH_HEADER=
+WHATSAPP_HTTP_AUTH_VALUE=
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_WEBHOOK_SECRET=
+RAZORPAY_PLAN_STARTER_ID=
+RAZORPAY_PLAN_PRO_ID=
+RAZORPAY_PLAN_BUSINESS_ID=
 ```
 
 Generate each secret:
@@ -93,7 +109,7 @@ Keep `.env` local. Do not commit real secrets.
 ## 4. Start Docker Services
 
 ```powershell
-docker compose up -d postgres redis
+docker compose up -d postgres
 ```
 
 Check service status:
@@ -106,7 +122,6 @@ Expected ports:
 
 ```text
 postgres -> 127.0.0.1:55432
-redis    -> 127.0.0.1:56379
 ```
 
 If Docker Desktop is not running, start it first. If port `55432` is already used, change `docker-compose.yml` and `DATABASE_URL` together.
@@ -219,7 +234,8 @@ Free plan guard:
 - `STARTER` allows 1 staff account; higher plans allow more.
 - A second property returns `PLAN_LIMIT_PROPERTIES`.
 - Staff invite beyond plan returns `PLAN_LIMIT_STAFF`.
-- Upgrade/cancel flows are UI-disabled until Razorpay subscription work is added.
+- Upgrade/cancel flows work locally with mock Razorpay subscription IDs and use real Razorpay Subscriptions when keys and plan IDs are set.
+- Tenant online rent orders work locally with mock Razorpay IDs and use real Razorpay Orders when keys are set.
 
 ## 8. SMS And OTP Providers
 
@@ -253,7 +269,50 @@ The API sends JSON with `phone`, `message`, `sender`, and `metadata`.
 
 Production India note: real OTP/reminder SMS needs paid, DLT-compliant sending. MSG91 is the docs-preferred India path; Twilio Verify is a global paid fallback.
 
-## 9. Production-Style Build
+Email and WhatsApp reminders use the same provider style:
+
+```env
+EMAIL_PROVIDER=http
+EMAIL_HTTP_URL=https://your-mailer.example/send
+EMAIL_HTTP_AUTH_HEADER=Authorization
+EMAIL_HTTP_AUTH_VALUE=Bearer replace_me
+WHATSAPP_PROVIDER=http
+WHATSAPP_HTTP_URL=https://your-whatsapp.example/send
+WHATSAPP_HTTP_AUTH_HEADER=Authorization
+WHATSAPP_HTTP_AUTH_VALUE=Bearer replace_me
+```
+
+Leave providers as `mock` for local dev. Production reminder sends fail with a config error when an enabled channel has no real provider config.
+
+## 9. Razorpay Rent Payments
+
+Local/mock mode:
+
+```env
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_WEBHOOK_SECRET=
+RAZORPAY_PLAN_STARTER_ID=
+RAZORPAY_PLAN_PRO_ID=
+RAZORPAY_PLAN_BUSINESS_ID=
+```
+
+Real Razorpay test/live mode:
+
+```env
+RAZORPAY_KEY_ID=rzp_test_or_live_key
+RAZORPAY_KEY_SECRET=replace_me
+RAZORPAY_WEBHOOK_SECRET=replace_me
+RAZORPAY_PLAN_STARTER_ID=plan_replace_me
+RAZORPAY_PLAN_PRO_ID=plan_replace_me
+RAZORPAY_PLAN_BUSINESS_ID=plan_replace_me
+```
+
+Tenants create rent orders through `/tenant-portal/payments/orders`. Razorpay payment webhooks should target `/webhooks/razorpay/payments`; the API verifies `X-Razorpay-Signature`, marks captured orders paid, creates an `ONLINE` payment, recalculates rent, generates the receipt, and records `x-razorpay-event-id` for replay protection.
+
+Owners start paid-plan checkout through `/subscription/checkout`. Razorpay subscription webhooks should target `/webhooks/razorpay/subscriptions`; the API activates the pending plan only after a verified subscription/invoice event and ignores duplicate event IDs.
+
+## 10. Production-Style Build
 
 ```powershell
 corepack pnpm -r typecheck
@@ -275,12 +334,18 @@ corepack pnpm --filter @tenantease/web start
 
 Build first before `start`.
 
-## 10. Tests
+## 11. Tests
 
 API tests:
 
 ```powershell
 corepack pnpm --filter @tenantease/api test
+```
+
+Web smoke tests:
+
+```powershell
+corepack pnpm --filter @tenantease/web test:e2e
 ```
 
 All workspace tests:
@@ -289,7 +354,7 @@ All workspace tests:
 corepack pnpm -r test
 ```
 
-Current web package has a placeholder test script, so real automated coverage is API-heavy.
+Current web package has Playwright smoke coverage for register, login, public listing fallback, and first-owner property creation. API coverage is still deeper than web coverage.
 
 API tests need:
 
@@ -298,7 +363,13 @@ API tests need:
 - Prisma schema applied to local DB.
 - Prisma Client generated after schema changes.
 
-## 11. Version And Security Checks
+Playwright tests start dev servers automatically from `apps/web/playwright.config.ts`. If Chromium is missing:
+
+```powershell
+corepack pnpm --filter @tenantease/web exec playwright install chromium
+```
+
+## 12. Version And Security Checks
 
 Type/build compatibility:
 
@@ -322,7 +393,13 @@ corepack pnpm outdated --recursive
 Production security audit:
 
 ```powershell
-corepack pnpm audit --prod
+corepack pnpm audit:prod
+```
+
+Static cleanup check:
+
+```powershell
+cmd /c "npx -y fallow@latest dead-code --format json --quiet --explain --unused-exports --unused-files --unused-deps --unlisted-deps --circular-deps --summary 2>NUL || exit /b 0"
 ```
 
 Notes:
@@ -331,8 +408,9 @@ Notes:
 - Prisma 7 reads `apps/api/prisma.config.ts` for schema, datasource URL, migrations, and seed command.
 - Prisma Client uses `@prisma/adapter-pg`; run `corepack pnpm prisma:generate` after dependency installs or Prisma schema changes.
 - Some pnpm commands may print Node `url.parse()` deprecation warnings from tooling. Track but do not confuse with app compile failures.
+- Current fallow dead-code result is clean. Current fallow health still points at large owner/tenant pages and a few backend route modules; handle these during UI/UX overhaul and route-splitting cleanup.
 
-## 12. Stop Or Reset Local Services
+## 13. Stop Or Reset Local Services
 
 Stop containers:
 
@@ -340,7 +418,7 @@ Stop containers:
 docker compose down
 ```
 
-Stop and delete local DB/Redis volumes:
+Stop and delete the local database volume:
 
 ```powershell
 docker compose down -v
@@ -349,12 +427,12 @@ docker compose down -v
 After deleting volumes:
 
 ```powershell
-docker compose up -d postgres redis
+docker compose up -d postgres
 corepack pnpm prisma:migrate
 corepack pnpm prisma:seed
 ```
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
 Database connection error:
 
@@ -365,7 +443,7 @@ Can't reach database server at `127.0.0.1:55432`
 Fix:
 
 ```powershell
-docker compose up -d postgres redis
+docker compose up -d postgres
 docker compose ps
 ```
 
@@ -393,7 +471,7 @@ Fix:
 Use one property on FREE, or change the owner's subscription row in Prisma Studio during local testing.
 ```
 
-Production upgrade flow is pending Razorpay subscription integration.
+Production subscription checkout needs Razorpay dashboard plan IDs configured in env.
 
 If migration drift blocks local dev and data can be dropped:
 
@@ -429,13 +507,13 @@ Fix:
 corepack pnpm prisma:generate
 ```
 
-## 14. First-Time Command Block
+## 15. First-Time Command Block
 
 ```powershell
 corepack enable
 corepack pnpm install
 Copy-Item .env.example .env
-docker compose up -d postgres redis
+docker compose up -d postgres
 corepack pnpm prisma:generate
 corepack pnpm prisma:migrate
 corepack pnpm prisma:seed

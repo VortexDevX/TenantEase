@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { requireOwnerProfileId } from "../../lib/auth-guards.js";
+import { assertPropertyAccess, requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
@@ -10,10 +10,20 @@ import { toPropertyDto, toPropertySettingsDto } from "../common/serializers.js";
 import { assertCanCreateProperty } from "../subscriptions/service.js";
 
 export async function propertyRoutes(app: FastifyInstance) {
-  app.get("/properties", { preHandler: [app.authenticate] }, async (request) => {
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
+  app.get("/properties", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
+    const accessFilter = request.user.role === "OWNER"
+      ? { ownerProfileId: requireOwnerProfileId(request.user.ownerProfileId) }
+      : {
+          staffAssignments: {
+            some: {
+              userId: request.user.sub,
+              isActive: true,
+              inviteStatus: "ACCEPTED" as const
+            }
+          }
+        };
     const properties = await prisma.property.findMany({
-      where: { ownerProfileId },
+      where: accessFilter,
       include: {
         rooms: {
           select: { bedCount: true, occupiedBeds: true }
@@ -63,10 +73,9 @@ export async function propertyRoutes(app: FastifyInstance) {
     return ok(toPropertyDto(property));
   });
 
-  app.get("/properties/:id/settings", { preHandler: [app.authenticate] }, async (request) => {
+  app.get("/properties/:id/settings", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const params = request.params as { id: string };
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
-    await assertPropertyOwnership(params.id, ownerProfileId);
+    await assertPropertyAccess(request, params.id, "property:read");
 
     const settings = await prisma.propertySettings.upsert({
       where: { propertyId: params.id },
@@ -77,11 +86,10 @@ export async function propertyRoutes(app: FastifyInstance) {
     return ok(toPropertySettingsDto(settings));
   });
 
-  app.put("/properties/:id/settings", { preHandler: [app.authenticate] }, async (request) => {
+  app.put("/properties/:id/settings", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const params = request.params as { id: string };
     const body = propertySettingsSchema.parse(request.body);
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
-    await assertPropertyOwnership(params.id, ownerProfileId);
+    await assertPropertyAccess(request, params.id, "property:write");
 
     const settings = await prisma.propertySettings.upsert({
       where: { propertyId: params.id },
@@ -105,11 +113,11 @@ export async function propertyRoutes(app: FastifyInstance) {
     return ok(toPropertySettingsDto(settings));
   });
 
-  app.get("/properties/:id", { preHandler: [app.authenticate] }, async (request) => {
+  app.get("/properties/:id", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const params = request.params as { id: string };
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
-    const property = await prisma.property.findFirst({
-      where: { id: params.id, ownerProfileId },
+    await assertPropertyAccess(request, params.id, "property:read");
+    const property = await prisma.property.findUnique({
+      where: { id: params.id },
       include: {
         rooms: {
           select: { bedCount: true, occupiedBeds: true }
@@ -124,10 +132,10 @@ export async function propertyRoutes(app: FastifyInstance) {
     return ok(toPropertyDto(property));
   });
 
-  app.put("/properties/:id", { preHandler: [app.authenticate] }, async (request) => {
+  app.put("/properties/:id", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const params = request.params as { id: string };
     const body = propertyInputSchema.parse(request.body);
-    await assertPropertyOwnership(params.id, requireOwnerProfileId(request.user.ownerProfileId));
+    await assertPropertyAccess(request, params.id, "property:write");
     const property = await prisma.property.update({
       where: { id: params.id },
       data: body,

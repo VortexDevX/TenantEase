@@ -4,6 +4,11 @@ import { prisma } from "../../lib/db.js";
 import { ok } from "../../lib/http.js";
 import { toRentEntryDto } from "../common/serializers.js";
 import { generateMonthlyRentEntries } from "./service.js";
+import { z } from "zod";
+
+const generateRentSchema = z.object({
+  billingMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "billingMonth must be YYYY-MM").optional()
+});
 
 export async function rentRoutes(app: FastifyInstance) {
   app.get("/properties/:propertyId/rent", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
@@ -33,7 +38,7 @@ export async function rentRoutes(app: FastifyInstance) {
 
   app.post("/properties/:propertyId/rent/generate", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const params = request.params as { propertyId: string };
-    const body = (request.body as { billingMonth?: string } | undefined) ?? {};
+    const body = generateRentSchema.parse(request.body ?? {});
     const { ownerProfileId } = await assertPropertyAccess(request, params.propertyId, "rent:write");
     return ok(await generateMonthlyRentEntries(params.propertyId, ownerProfileId, body.billingMonth));
   });

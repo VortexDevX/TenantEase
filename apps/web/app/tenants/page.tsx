@@ -3,19 +3,24 @@
 import { useState, useMemo } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsTrigger } from "@/components/ui/tabs";
 import { useProperty } from "@/lib/PropertyContext";
 import { useApi } from "@/lib/useApi";
 import { fetchApi, fetchApiBlob } from "@/lib/api-client";
-import { formatPaisa } from "@/lib/format";
+import { rupeesToPaisa } from "@/lib/money";
 import { AddTenantModal } from "@/components/tenants/AddTenantModal";
 import { CsvImportModal } from "@/components/tenants/CsvImportModal";
-import { Search, Plus, PhoneCall, IndianRupee, MoreVertical, Loader2, UploadCloud, ArrowRightLeft, DoorOpen, FileText, Trash2, X } from "lucide-react";
+import { Search, Plus, PhoneCall, IndianRupee, MoreVertical, Loader2, UploadCloud, ArrowRightLeft, DoorOpen, FileText, Trash2, X, Users, CalendarClock } from "lucide-react";
 import type { RoomDto, TenantDocumentDto, TenantDto, TenantStatus } from "@tenantease/types";
 import Link from "next/link";
+
+// Ledger Calm Shared Components
+import { PageHeader } from "@/components/shared/PageHeader";
+import { MoneyValue } from "@/components/shared/MoneyValue";
+import { StatusBadge, StatusBadgeType } from "@/components/shared/StatusBadge";
+import { EmptyState } from "@/components/shared/EmptyState";
 
 function getInitials(name: string): string {
   return name
@@ -35,6 +40,7 @@ function TenantListContent() {
   const [documentError, setDocumentError] = useState("");
   const [documentSuccess, setDocumentSuccess] = useState("");
   const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [documentCategory, setDocumentCategory] = useState<"KYC" | "PHOTO" | "OTHER">("KYC");
 
   const { data: tenants, loading, refetch } = useApi<TenantDto[]>(
     propertyId ? `/properties/${propertyId}/tenants?limit=100` : null
@@ -64,19 +70,6 @@ function TenantListContent() {
     return list;
   }, [tenants, search, statusFilter]);
 
-  const getStatusBadge = (status: TenantStatus) => {
-    switch (status) {
-      case "ACTIVE":
-        return <Badge variant="success">Active</Badge>;
-      case "NOTICE":
-        return <Badge variant="warning">Notice Period</Badge>;
-      case "VACATED":
-        return <Badge variant="secondary">Vacated</Badge>;
-      default:
-        return <Badge>{status}</Badge>;
-    }
-  };
-
   const isLoading = propLoading || loading;
 
   async function transferTenant(tenant: TenantDto) {
@@ -88,11 +81,16 @@ function TenantListContent() {
       return;
     }
     const rentText = window.prompt("New monthly rent in rupees. Leave blank to keep current rent:");
+    const monthlyRent = rentText ? rupeesToPaisa(rentText) : undefined;
+    if (monthlyRent !== undefined && (!Number.isFinite(monthlyRent) || monthlyRent < 1)) {
+      alert("Monthly rent must be a rupee amount greater than 0.");
+      return;
+    }
     await fetchApi(`/tenants/${tenant.id}/transfer`, {
       method: "POST",
       body: JSON.stringify({
         roomId: room.id,
-        monthlyRent: rentText ? Math.round(Number(rentText) * 100) : undefined,
+        monthlyRent,
         effectiveDate: new Date().toISOString(),
       }),
     });
@@ -102,13 +100,32 @@ function TenantListContent() {
   async function vacateTenant(tenant: TenantDto) {
     if (!confirm(`Mark ${tenant.fullName} as vacated?`)) return;
     const damageText = window.prompt("Damage deduction in rupees:", "0");
+    const damageDeduction = rupeesToPaisa(damageText || "0");
+    if (!Number.isFinite(damageDeduction) || damageDeduction < 0) {
+      alert("Damage deduction must be a rupee amount of 0 or more.");
+      return;
+    }
     await fetchApi(`/tenants/${tenant.id}/vacate`, {
       method: "POST",
       body: JSON.stringify({
         vacatedAt: new Date().toISOString(),
-        damageDeduction: Math.round(Number(damageText || 0) * 100),
+        damageDeduction,
         refundStatus: "pending",
       }),
+    });
+    refetch();
+  }
+
+  async function placeOnNotice(tenant: TenantDto) {
+    const date = window.prompt("Expected vacate date (YYYY-MM-DD):");
+    if (!date) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      alert("Use YYYY-MM-DD format.");
+      return;
+    }
+    await fetchApi(`/tenants/${tenant.id}/notice`, {
+      method: "POST",
+      body: JSON.stringify({ expectedVacateDate: date })
     });
     refetch();
   }
@@ -121,6 +138,7 @@ function TenantListContent() {
     try {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("category", documentCategory);
       await fetchApi(`/tenants/${tenantId}/documents/upload`, {
         method: "POST",
         body: formData,
@@ -185,30 +203,28 @@ function TenantListContent() {
       )}
 
       {/* Header & Actions */}
-      <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Tenants</h1>
-          <p className="text-muted-foreground font-medium text-sm mt-1">
-            {isLoading ? "Loading..." : `Manage ${tenants?.length ?? 0} tenant${(tenants?.length ?? 0) !== 1 ? "s" : ""}.`}
-          </p>
-        </div>
-        <div className="flex gap-3 w-full sm:w-auto">
-          <Button onClick={() => setShowImportModal(true)} disabled={!propertyId} variant="outline" className="shrink-0 flex-1 sm:flex-auto shadow-sm">
-             <UploadCloud className="mr-2" size={18} /> Import CSV
-          </Button>
-          <Button onClick={() => setShowModal(true)} disabled={!propertyId} className="shrink-0 flex-1 sm:flex-auto shadow-float">
-             <Plus className="mr-2" size={18} /> Add Tenant
-          </Button>
-        </div>
-      </section>
+      <PageHeader
+        title="Tenants"
+        description={isLoading ? "Loading..." : `Manage ${tenants?.length ?? 0} tenant${(tenants?.length ?? 0) !== 1 ? "s" : ""}.`}
+        actions={
+          <div className="flex gap-3 w-full sm:w-auto">
+            <Button onClick={() => setShowImportModal(true)} disabled={!propertyId} variant="outline" className="shrink-0 flex-1 sm:flex-auto shadow-sm">
+               <UploadCloud className="mr-2" size={18} /> Import CSV
+            </Button>
+            <Button onClick={() => setShowModal(true)} disabled={!propertyId} className="shrink-0 flex-1 sm:flex-auto shadow-float">
+               <Plus className="mr-2" size={18} /> Add Tenant
+            </Button>
+          </div>
+        }
+      />
 
       {/* Search & Filters */}
-      <section className="flex flex-col gap-4 bg-card p-4 rounded-xl border border-border shadow-sm sticky top-0 md:relative z-10">
+      <section className="flex flex-col gap-4 bg-card/60 backdrop-blur-xl p-4 rounded-xl border border-white/[0.06] shadow-glass sticky top-0 md:relative z-10">
          <div className="relative w-full">
            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" size={18} />
            <Input
              placeholder="Search by name or phone..."
-             className="pl-10 h-12 bg-background/50 focus:bg-background transition-colors"
+             className="pl-10 h-12 bg-white/[0.04] border-white/[0.08] focus:bg-white/[0.06] transition-colors"
              value={search}
              onChange={(e) => setSearch(e.target.value)}
            />
@@ -228,13 +244,16 @@ function TenantListContent() {
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed border-border rounded-2xl bg-secondary/20">
-          <p className="text-muted-foreground font-medium text-center">No tenants found matching your criteria.</p>
-        </div>
+        <EmptyState
+          title="No tenants found"
+          description="No tenants match your current filters or search criteria."
+          icon={<Users />}
+          className="py-16"
+        />
       ) : (
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-10">
            {filtered.map((t, idx) => (
-             <Card key={t.id} className="overflow-hidden animate-slide-up" style={{ animationDelay: `${idx * 40}ms` }}>
+             <Card key={t.id} className="overflow-hidden animate-slide-up shadow-card" style={{ animationDelay: `${idx * 40}ms` }}>
                 <CardContent className="p-0">
                    <div className="p-5 flex gap-4 items-start relative">
                       {/* Avatar */}
@@ -252,21 +271,28 @@ function TenantListContent() {
                             <span className="text-sm text-muted-foreground">{t.phone}</span>
                          </div>
                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-sm font-semibold text-foreground">{formatPaisa(t.monthlyRent)}/mo</span>
+                            <MoneyValue amount={t.monthlyRent} className="text-sm font-semibold text-foreground inline" />
+                            <span className="text-sm font-semibold text-foreground">/mo</span>
                          </div>
+                         {t.emergencyContactPhone || t.aadhaarLast4 ? (
+                           <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold text-muted-foreground">
+                             {t.emergencyContactPhone ? <span>Emergency: {t.emergencyContactPhone}</span> : null}
+                             {t.aadhaarLast4 ? <span>Aadhaar: ****{t.aadhaarLast4}</span> : null}
+                           </div>
+                         ) : null}
                          <div className="mt-3">
-                           {getStatusBadge(t.status)}
+                           <StatusBadge status={t.status as StatusBadgeType} />
                          </div>
                       </div>
                    </div>
                    
                    {/* Actions Footer */}
-                   <div className="grid grid-cols-5 border-t border-border bg-secondary/30">
-                      <a href={`tel:${t.phone}`} className="flex items-center justify-center gap-2 py-3 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors border-r border-border">
-                        <PhoneCall size={16} /> Call
+                   <div className="grid grid-cols-3 sm:grid-cols-6 border-t border-white/[0.04] bg-white/[0.01]">
+                      <a href={`tel:${t.phone}`} className="flex items-center justify-center gap-2 py-3 text-xs font-semibold text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition-colors border-r border-white/[0.04]">
+                        <PhoneCall size={14} /> Call
                       </a>
-                      <Link href={`/payments/new?tenantId=${t.id}`} className="flex items-center justify-center gap-2 py-3 text-sm font-semibold text-primary-strong hover:bg-primary/5 transition-colors border-r border-border">
-                        <IndianRupee size={16} /> Rent
+                      <Link href={`/payments/new?tenantId=${t.id}`} className="flex items-center justify-center gap-2 py-3 text-xs font-semibold text-primary-strong hover:bg-primary/5 transition-colors border-r border-white/[0.04]">
+                        <IndianRupee size={14} /> Rent
                       </Link>
                       <button
                         type="button"
@@ -275,19 +301,22 @@ function TenantListContent() {
                           setDocumentError("");
                           setDocumentSuccess("");
                         }}
-                        className="flex items-center justify-center gap-2 py-3 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors border-r border-border"
+                        className="flex items-center justify-center gap-2 py-3 text-xs font-semibold text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition-colors border-r border-white/[0.04]"
                       >
-                        <FileText size={16} /> KYC
+                        <FileText size={14} /> KYC
                       </button>
-                      <button type="button" onClick={() => transferTenant(t)} disabled={t.status === "VACATED"} className="flex items-center justify-center gap-2 py-3 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors border-r border-border disabled:opacity-40">
-                        <ArrowRightLeft size={16} /> Move
+                      <button type="button" onClick={() => transferTenant(t)} disabled={t.status === "VACATED"} className="flex items-center justify-center gap-2 py-3 text-xs font-semibold text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition-colors border-r border-white/[0.04] disabled:opacity-40">
+                        <ArrowRightLeft size={14} /> Move
                       </button>
-                      <button type="button" onClick={() => vacateTenant(t)} disabled={t.status === "VACATED"} className="flex items-center justify-center gap-2 py-3 text-sm font-semibold text-destructive hover:bg-destructive/5 transition-colors border-l border-border disabled:opacity-40">
-                        <DoorOpen size={16} /> Vacate
+                      <button type="button" onClick={() => placeOnNotice(t)} disabled={t.status !== "ACTIVE"} className="flex items-center justify-center gap-2 py-3 text-xs font-semibold text-warning hover:bg-warning/5 transition-colors border-r border-white/[0.04] disabled:opacity-40">
+                        <CalendarClock size={14} /> Notice
+                      </button>
+                      <button type="button" onClick={() => vacateTenant(t)} disabled={t.status === "VACATED"} className="flex items-center justify-center gap-2 py-3 text-xs font-semibold text-destructive hover:bg-destructive/5 transition-colors border-l border-white/[0.04] disabled:opacity-40">
+                        <DoorOpen size={14} /> Vacate
                       </button>
                    </div>
                    {selectedTenantId === t.id && (
-                    <div className="border-t border-border bg-card p-4">
+                    <div className="border-t border-white/[0.04] bg-card p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-bold text-foreground">KYC documents</p>
@@ -296,7 +325,7 @@ function TenantListContent() {
                         <button
                           type="button"
                           onClick={() => setSelectedTenantId(null)}
-                          className="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                          className="rounded-md p-1 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
                           aria-label="Close KYC panel"
                         >
                           <X size={16} />
@@ -309,7 +338,7 @@ function TenantListContent() {
                         </div>
                       )}
 
-                      <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-secondary/30 px-3 py-3 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-white/[0.08] bg-white/[0.02] px-3 py-3 text-sm font-semibold text-muted-foreground hover:bg-white/[0.04]">
                         {uploadingDocument ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}
                         {uploadingDocument ? "Uploading..." : "Upload document"}
                         <input
@@ -323,22 +352,32 @@ function TenantListContent() {
                           }}
                         />
                       </label>
+                      <select
+                        value={documentCategory}
+                        onChange={(event) => setDocumentCategory(event.target.value as "KYC" | "PHOTO" | "OTHER")}
+                        className="mt-2 h-9 w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 text-sm font-semibold text-foreground focus:border-primary/50 outline-none"
+                        aria-label="Document category"
+                      >
+                        <option value="KYC">KYC</option>
+                        <option value="PHOTO">Photo</option>
+                        <option value="OTHER">Other</option>
+                      </select>
 
                       <div className="mt-3 flex flex-col gap-2">
                         {documentsLoading ? (
-                          <div className="flex h-16 items-center justify-center">
-                            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                          </div>
+                           <div className="flex h-16 items-center justify-center">
+                             <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                           </div>
                         ) : documents && documents.length > 0 ? (
                           documents.map((document) => (
-                            <div key={document.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-secondary/20 p-3">
+                            <div key={document.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
                               <button
                                 type="button"
                                 onClick={() => downloadTenantDocument(document)}
                                 className="min-w-0 text-left"
                               >
                                 <p className="truncate text-sm font-semibold text-foreground">{document.fileName}</p>
-                                <p className="mt-0.5 text-xs font-medium text-muted-foreground">{new Date(document.createdAt).toLocaleDateString()}</p>
+                                <p className="mt-0.5 text-xs font-medium text-muted-foreground">{document.category} · {new Date(document.createdAt).toLocaleDateString()}</p>
                               </button>
                               <button
                                 type="button"
@@ -351,7 +390,7 @@ function TenantListContent() {
                             </div>
                           ))
                         ) : (
-                          <p className="rounded-lg bg-secondary/20 px-3 py-4 text-center text-xs font-medium text-muted-foreground">No documents uploaded yet.</p>
+                          <p className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-3 py-4 text-center text-xs font-medium text-muted-foreground">No documents uploaded yet.</p>
                         )}
                       </div>
                     </div>
@@ -365,10 +404,10 @@ function TenantListContent() {
   );
 }
 
-import { useRequireRole } from "@/contexts/AuthContext";
+import { useRequireRoles } from "@/contexts/AuthContext";
 
 export default function TenantList() {
-  const { authorized } = useRequireRole("OWNER");
+  const { authorized } = useRequireRoles(["OWNER", "STAFF"]);
   if (!authorized) return null;
 
   return (

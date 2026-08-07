@@ -6,6 +6,8 @@ coverage/
 apps/*/node_modules/
 apps/*/.next/
 apps/*/dist/
+apps/*/playwright-report/
+apps/*/test-results/
 packages/*/node_modules/
 *.log
 .env

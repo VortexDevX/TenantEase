@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { ApiError, fetchApi } from "@/lib/api-client";
 import { Loader2, X } from "lucide-react";
 import type { PropertyType } from "@tenantease/types";
+import { useAccessibleDialog } from "@/lib/useAccessibleDialog";
 
 interface CreatePropertyModalProps {
   onClose: () => void;
@@ -11,6 +12,7 @@ interface CreatePropertyModalProps {
 }
 
 export function CreatePropertyModal({ onClose, onSuccess }: CreatePropertyModalProps) {
+  const dialogRef = useAccessibleDialog(onClose);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,10 +48,10 @@ export function CreatePropertyModal({ onClose, onSuccess }: CreatePropertyModalP
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in">
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="property-dialog-title" tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in">
       <div className="bg-card w-full max-w-md rounded-2xl shadow-float border border-border overflow-hidden animate-slide-up">
         <div className="flex justify-between items-center p-4 border-b border-border bg-secondary/30">
-           <h2 className="font-bold text-lg text-foreground tracking-tight">Add New Property</h2>
+           <h2 id="property-dialog-title" className="font-bold text-lg text-foreground tracking-tight">Add New Property</h2>
            <button
              type="button"
              onClick={onClose}

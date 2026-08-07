@@ -1,21 +1,31 @@
 import type { FastifyInstance } from "fastify";
-import { requireOwnerProfileId } from "../../lib/auth-guards.js";
+import { assertPropertyAccess } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
-import { assertPropertyOwnership } from "../common/owner.js";
 import "@fastify/multipart";
 import { parse } from "csv-parse/sync";
 import { createAuditLog } from "../common/audit.js";
+import { assertRoomAvailability, lockRoom, recalculateRoom } from "./service.js";
 
-const TEMPLATE_HEADERS = "fullName,phone,email,moveInDate,monthlyRent,depositPaid,roomNumber";
-const TEMPLATE_EXAMPLE = "Rahul Sharma,9876543210,rahul@example.com,2023-11-01,8000,8000,101";
+const TEMPLATE_HEADERS = "fullName,phone,email,moveInDate,monthlyRent,depositPaid,roomNumber,emergencyContactName,emergencyContactPhone,emergencyContactRelation,aadhaarLast4,notes";
+const TEMPLATE_EXAMPLE = "Rahul Sharma,9876543210,rahul@example.com,2023-11-01,8000.00,8000.00,101,Suresh Sharma,9876543200,Father,4567,Night shift";
+
+function rupeesToPaisa(value: unknown) {
+  const raw = String(value ?? "").trim().replace(/,/g, "");
+
+  if (!/^\d+(\.\d{0,2})?$/.test(raw)) {
+    return Number.NaN;
+  }
+
+  const [rupees, paise = ""] = raw.split(".");
+  return Number(rupees) * 100 + Number(`${paise}00`.slice(0, 2));
+}
 
 export async function importTenantRoutes(app: FastifyInstance) {
-  app.get("/properties/:propertyId/tenants/import/template", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.get("/properties/:propertyId/tenants/import/template", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const params = request.params as { propertyId: string };
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
-    await assertPropertyOwnership(params.propertyId, ownerProfileId);
+    await assertPropertyAccess(request, params.propertyId, "tenant:read");
 
     const csvData = `${TEMPLATE_HEADERS}\n${TEMPLATE_EXAMPLE}\n`;
     
@@ -24,17 +34,25 @@ export async function importTenantRoutes(app: FastifyInstance) {
     return reply.send(csvData);
   });
 
-  app.post("/properties/:propertyId/tenants/import", { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.post("/properties/:propertyId/tenants/import", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const params = request.params as { propertyId: string };
-    const ownerProfileId = requireOwnerProfileId(request.user.ownerProfileId);
-    await assertPropertyOwnership(params.propertyId, ownerProfileId);
+    const { ownerProfileId } = await assertPropertyAccess(request, params.propertyId, "tenant:write");
 
     const data = await request.file();
     if (!data) {
       throw new AppError(400, "VALIDATION_ERROR", "Upload a CSV file");
     }
+    if (data.mimetype !== "text/csv" && data.mimetype !== "application/vnd.ms-excel") {
+      throw new AppError(400, "VALIDATION_ERROR", "Only CSV files are accepted");
+    }
+    if (!data.filename.toLowerCase().endsWith(".csv")) {
+      throw new AppError(400, "VALIDATION_ERROR", "File name must end in .csv");
+    }
 
     const fileBuffer = await data.toBuffer();
+    if (fileBuffer.includes(0)) {
+      throw new AppError(400, "VALIDATION_ERROR", "CSV contains invalid binary content");
+    }
     const csvString = fileBuffer.toString("utf-8");
 
     let records: any[];
@@ -76,12 +94,7 @@ export async function importTenantRoutes(app: FastifyInstance) {
             continue;
         }
 
-        if (room.occupiedBeds >= room.bedCount) {
-             errors.push({ row: rowNum, error: `Room ${row.roomNumber} is full` });
-             continue;
-        }
-
-        const monthlyRent = parseInt(row.monthlyRent) * 100;
+        const monthlyRent = rupeesToPaisa(row.monthlyRent);
         if (isNaN(monthlyRent)) {
              errors.push({ row: rowNum, error: `Invalid monthly rent format` });
              continue;
@@ -89,8 +102,11 @@ export async function importTenantRoutes(app: FastifyInstance) {
         
         let depositPaid = 0;
         if (row.depositPaid) {
-            depositPaid = parseInt(row.depositPaid) * 100;
-            if (isNaN(depositPaid)) depositPaid = 0;
+            depositPaid = rupeesToPaisa(row.depositPaid);
+            if (isNaN(depositPaid)) {
+              errors.push({ row: rowNum, error: `Invalid deposit paid format` });
+              continue;
+            }
         }
 
         const moveInDate = new Date(row.moveInDate);
@@ -101,6 +117,13 @@ export async function importTenantRoutes(app: FastifyInstance) {
 
         try {
             await prisma.$transaction(async (tx) => {
+                await lockRoom(tx, room.id);
+                await assertRoomAvailability(room.id, ownerProfileId, tx);
+                const duplicate = await tx.tenant.findFirst({
+                  where: { phone: String(row.phone), status: { in: ["ACTIVE", "NOTICE"] } },
+                  select: { id: true }
+                });
+                if (duplicate) throw new AppError(409, "VALIDATION_ERROR", "Active tenant phone already exists");
                 await tx.tenant.create({
                     data: {
                         propertyId: params.propertyId,
@@ -108,6 +131,11 @@ export async function importTenantRoutes(app: FastifyInstance) {
                         fullName: row.fullName,
                         phone: row.phone,
                         email: row.email || null,
+                        emergencyContactName: row.emergencyContactName || null,
+                        emergencyContactPhone: row.emergencyContactPhone || null,
+                        emergencyContactRelation: row.emergencyContactRelation || null,
+                        aadhaarLast4: row.aadhaarLast4 || null,
+                        notes: row.notes || null,
                         monthlyRent,
                         depositPaid,
                         moveInDate: moveInDate,
@@ -115,20 +143,14 @@ export async function importTenantRoutes(app: FastifyInstance) {
                     }
                 });
 
-                // update local room occupancy tracking
-                room.occupiedBeds += 1;
-                
-                await tx.room.update({
-                    where: { id: room.id },
-                    data: {
-                        occupiedBeds: room.occupiedBeds,
-                        status: room.occupiedBeds >= room.bedCount ? "OCCUPIED" : "PARTIAL"
-                    }
-                });
+                await recalculateRoom(room.id, tx);
             });
             successCount++;
-        } catch (dbErr: any) {
-            errors.push({ row: rowNum, error: `Failed to insert tenant: ${dbErr.message}` });
+        } catch (dbErr: unknown) {
+            errors.push({
+              row: rowNum,
+              error: dbErr instanceof AppError ? dbErr.message : "Unable to import this row"
+            });
         }
     }
 

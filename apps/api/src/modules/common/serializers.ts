@@ -79,6 +79,11 @@ export function toTenantDto(input: {
   fullName: string;
   phone: string;
   email: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  emergencyContactRelation?: string | null;
+  aadhaarLast4?: string | null;
+  notes?: string | null;
   status: TenantStatus;
   moveInDate: Date;
   monthlyRent: number;
@@ -235,11 +240,13 @@ export function toVacateRecordDto(input: {
   refundAmount: number;
   refundStatus: string;
   finalNotes: string | null;
+  settlementPdfPath?: string | null;
   createdAt: Date;
 }): VacateRecordDto {
   return {
     ...input,
     vacatedAt: input.vacatedAt.toISOString(),
+    settlementPdfUrl: input.settlementPdfPath ? `/vacate-records/${input.id}/download` : null,
     createdAt: input.createdAt.toISOString()
   };
 }

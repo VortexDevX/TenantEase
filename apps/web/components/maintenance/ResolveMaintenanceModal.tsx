@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchApi } from "@/lib/api-client";
 import { Loader2, X } from "lucide-react";
+import { useAccessibleDialog } from "@/lib/useAccessibleDialog";
 
 interface ResolveMaintenanceModalProps {
   requestId: string;
@@ -11,6 +12,7 @@ interface ResolveMaintenanceModalProps {
 }
 
 export function ResolveMaintenanceModal({ requestId, onClose, onSuccess }: ResolveMaintenanceModalProps) {
+  const dialogRef = useAccessibleDialog(onClose);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
@@ -37,11 +39,11 @@ export function ResolveMaintenanceModal({ requestId, onClose, onSuccess }: Resol
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in overflow-y-auto">
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="resolve-maintenance-dialog-title" tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in overflow-y-auto">
       <div className="bg-card w-full max-w-sm rounded-2xl shadow-float border border-border overflow-hidden animate-slide-up my-auto">
         <div className="flex justify-between items-center p-4 border-b border-border bg-secondary/30">
-           <h2 className="font-bold text-lg text-foreground tracking-tight">Mark Resolved</h2>
-           <button onClick={onClose} className="p-1.5 text-muted-foreground hover:bg-background rounded-full transition-colors">
+           <h2 id="resolve-maintenance-dialog-title" className="font-bold text-lg text-foreground tracking-tight">Mark Resolved</h2>
+           <button type="button" aria-label="Close resolve maintenance dialog" onClick={onClose} className="p-1.5 text-muted-foreground hover:bg-background rounded-full transition-colors">
               <X size={18} />
            </button>
         </div>
@@ -54,8 +56,9 @@ export function ResolveMaintenanceModal({ requestId, onClose, onSuccess }: Resol
            )}
 
            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-semibold">Resolution Notes</label>
+              <label htmlFor="resolution-notes" className="text-sm font-semibold">Resolution Notes</label>
               <textarea 
+                id="resolution-notes"
                 required 
                 rows={3}
                 className="flex w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"

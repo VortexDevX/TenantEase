@@ -1,4 +1,4 @@
-import { RentStatus } from "@prisma/client";
+import { RentStatus, type Prisma } from "@prisma/client";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { monthKey } from "../../lib/date.js";
@@ -18,6 +18,8 @@ export function computeRentStatus(amountDue: number, amountPaid: number, dueDate
 
   return RentStatus.UNPAID;
 }
+
+type DbClient = Prisma.TransactionClient | typeof prisma;
 
 export async function generateMonthlyRentEntries(propertyId: string, ownerProfileId: string, month?: string) {
   const property = await prisma.property.findFirst({
@@ -68,8 +70,8 @@ export async function generateMonthlyRentEntries(propertyId: string, ownerProfil
   };
 }
 
-export async function recalculateRentEntry(rentEntryId: string) {
-  const rentEntry = await prisma.rentEntry.findUnique({
+export async function recalculateRentEntry(rentEntryId: string, db: DbClient = prisma) {
+  const rentEntry = await db.rentEntry.findUnique({
     where: { id: rentEntryId },
     include: { payments: true }
   });
@@ -82,7 +84,7 @@ export async function recalculateRentEntry(rentEntryId: string) {
     .filter((payment) => !payment.isVoided)
     .reduce((sum, payment) => sum + payment.amount, 0);
 
-  return prisma.rentEntry.update({
+  return db.rentEntry.update({
     where: { id: rentEntryId },
     data: {
       amountPaid,

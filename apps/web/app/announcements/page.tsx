@@ -9,7 +9,7 @@ import { useProperty } from "@/lib/PropertyContext";
 import { useApi } from "@/lib/useApi";
 import { Plus, Megaphone, Loader2, AlertCircle, Calendar } from "lucide-react";
 import { AnnouncementModal } from "@/components/announcements/AnnouncementModal";
-import { useRequireRole } from "@/contexts/AuthContext";
+import { useRequireRoles } from "@/contexts/AuthContext";
 
 type AnnouncementCategory = "GENERAL" | "MAINTENANCE" | "PAYMENT" | "RULE_CHANGE" | "EMERGENCY";
 
@@ -127,7 +127,7 @@ function AnnouncementsContent() {
 }
 
 export default function AnnouncementsPage() {
-  const { authorized } = useRequireRole("OWNER");
+  const { authorized } = useRequireRoles(["OWNER", "STAFF"]);
   if (!authorized) return null;
 
   return (

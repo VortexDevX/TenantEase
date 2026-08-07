@@ -13,6 +13,15 @@ function adminToken(userId: string, phone: string) {
   });
 }
 
+function ownerToken(userId: string, phone: string, ownerProfileId: string) {
+  return app.jwt.sign({
+    sub: userId,
+    phone,
+    role: "OWNER",
+    ownerProfileId
+  });
+}
+
 beforeAll(async () => {
   await app.ready();
 });
@@ -224,6 +233,93 @@ describe("api app", () => {
     });
   });
 
+  it("should return owner profile fields during owner OTP login", async () => {
+    const phone = "9111111122";
+    createdPhones.add(phone);
+
+    await prisma.user.create({
+      data: {
+        phone,
+        role: "OWNER",
+        ownerProfile: {
+          create: {
+            displayName: "Completed Owner",
+            companyName: "Completed PG"
+          }
+        }
+      }
+    });
+
+    const sendResponse = await app.inject({
+      method: "POST",
+      url: "/auth/send-otp",
+      payload: { phone }
+    });
+    const sendBody = sendResponse.json() as { data: { challengeId: string; debugOtp?: string } };
+
+    const verifyResponse = await app.inject({
+      method: "POST",
+      url: "/auth/verify-otp",
+      payload: {
+        phone,
+        otp: sendBody.data.debugOtp,
+        challengeId: sendBody.data.challengeId
+      }
+    });
+
+    expect(verifyResponse.statusCode).toBe(200);
+    expect(verifyResponse.json()).toMatchObject({
+      success: true,
+      data: {
+        user: {
+          phone,
+          role: "OWNER",
+          displayName: "Completed Owner",
+          companyName: "Completed PG"
+        },
+        isNewUser: false
+      }
+    });
+  });
+
+  it("should show a clear error when registering with an existing phone", async () => {
+    const phone = "9111111123";
+    createdPhones.add(phone);
+
+    await prisma.user.create({
+      data: {
+        phone,
+        role: "TENANT"
+      }
+    });
+
+    const sendResponse = await app.inject({
+      method: "POST",
+      url: "/auth/send-otp",
+      payload: { phone }
+    });
+    const sendBody = sendResponse.json() as { data: { challengeId: string; debugOtp?: string } };
+
+    const verifyResponse = await app.inject({
+      method: "POST",
+      url: "/auth/owner/verify-otp",
+      payload: {
+        phone,
+        otp: sendBody.data.debugOtp,
+        challengeId: sendBody.data.challengeId
+      }
+    });
+
+    expect(verifyResponse.statusCode).toBe(409);
+    expect(verifyResponse.json()).toMatchObject({
+      success: false,
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "An account with this number already exists. Please sign in instead."
+      }
+    });
+  });
+
   it("should block admin deletion of users with linked business data", async () => {
     const adminPhone = "9111111112";
     const ownerPhone = "9111111113";
@@ -327,13 +423,66 @@ describe("api app", () => {
       }
     });
 
-    expect(response.statusCode).toBe(403);
+    expect(response.statusCode).toBe(401);
     expect(response.json()).toMatchObject({
       success: false,
       error: {
-        code: "AUTH_FORBIDDEN"
+        code: "AUTH_INVALID_TOKEN"
       }
     });
+  });
+
+  it("should reject stale owner tokens after an admin changes the user role", async () => {
+    const phone = "9111111121";
+    createdPhones.add(phone);
+
+    const owner = await prisma.user.create({
+      data: {
+        phone,
+        role: "OWNER",
+        ownerProfile: { create: {} }
+      },
+      include: { ownerProfile: true }
+    });
+    expect(owner.ownerProfile).not.toBeNull();
+    const token = ownerToken(owner.id, phone, owner.ownerProfile!.id);
+
+    await prisma.user.update({
+      where: { id: owner.id },
+      data: { role: "TENANT" }
+    });
+
+    const staleMeResponse = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect(staleMeResponse.statusCode).toBe(401);
+    expect(staleMeResponse.json()).toMatchObject({
+      success: false,
+      error: { code: "AUTH_INVALID_TOKEN" }
+    });
+
+    const sendResponse = await app.inject({
+      method: "POST",
+      url: "/auth/send-otp",
+      payload: { phone }
+    });
+    const sendBody = sendResponse.json() as { data: { challengeId: string; debugOtp?: string } };
+
+    const verifyResponse = await app.inject({
+      method: "POST",
+      url: "/auth/verify-otp",
+      payload: {
+        phone,
+        otp: sendBody.data.debugOtp,
+        challengeId: sendBody.data.challengeId
+      }
+    });
+
+    expect(verifyResponse.statusCode).toBe(200);
+    expect(verifyResponse.json().data.user.role).toBe("TENANT");
   });
 
   it("should allow admin deletion of empty user accounts", async () => {

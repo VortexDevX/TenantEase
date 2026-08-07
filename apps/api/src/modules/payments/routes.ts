@@ -13,32 +13,65 @@ export async function paymentRoutes(app: FastifyInstance) {
   app.post("/payments", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const body = paymentInputSchema.parse(request.body);
     const { ownerProfileId } = await assertRentEntryAccess(request, body.rentEntryId, "payment:write");
-    const rentEntry = await prisma.rentEntry.findFirst({
-      where: {
-        id: body.rentEntryId,
-        tenant: {
-          property: { ownerProfileId }
+    const payment = await prisma.$transaction(async (tx) => {
+      if (body.idempotencyKey) {
+        const existing = await tx.payment.findFirst({
+          where: {
+            idempotencyKey: body.idempotencyKey,
+            rentEntry: { tenant: { property: { ownerProfileId } } }
+          }
+        });
+        if (existing) {
+          if (
+            existing.rentEntryId !== body.rentEntryId ||
+            existing.amount !== body.amount ||
+            existing.mode !== body.mode
+          ) {
+            throw new AppError(409, "VALIDATION_ERROR", "Idempotency key was already used for another payment");
+          }
+          return existing;
         }
       }
-    });
 
-    if (!rentEntry) {
-      throw new AppError(404, "RENT_ENTRY_NOT_FOUND", "Rent entry not found");
-    }
+      const rentEntry = await tx.rentEntry.findFirst({
+        where: {
+          id: body.rentEntryId,
+          tenant: { property: { ownerProfileId } }
+        },
+        include: { payments: true }
+      });
 
-    const payment = await prisma.payment.create({
-      data: {
-        rentEntryId: body.rentEntryId,
-        amount: body.amount,
-        mode: body.mode,
-        paidAt: new Date(body.paidAt),
-        referenceNumber: body.referenceNumber ?? null,
-        note: body.note ?? null
+      if (!rentEntry) {
+        throw new AppError(404, "RENT_ENTRY_NOT_FOUND", "Rent entry not found");
       }
-    });
 
-    await recalculateRentEntry(body.rentEntryId);
-    const receipt = await generateReceipt(payment.id, ownerProfileId);
+      const amountPaid = rentEntry.payments
+        .filter((item) => !item.isVoided)
+        .reduce((sum, item) => sum + item.amount, 0);
+      const remaining = Math.max(0, rentEntry.amountDue - amountPaid);
+      if (body.amount > remaining) {
+        throw new AppError(422, "VALIDATION_ERROR", "Payment amount cannot exceed pending balance", { remaining });
+      }
+
+      const created = await tx.payment.create({
+        data: {
+          rentEntryId: body.rentEntryId,
+          amount: body.amount,
+          mode: body.mode,
+          paidAt: new Date(body.paidAt),
+          idempotencyKey: body.idempotencyKey,
+          referenceNumber: body.referenceNumber ?? null,
+          note: body.note ?? null
+        }
+      });
+      await recalculateRentEntry(body.rentEntryId, tx);
+      return created;
+    }, { isolationLevel: "Serializable" });
+
+    const receipt = await generateReceipt(payment.id, ownerProfileId).catch((error) => {
+      request.log.error({ err: error, paymentId: payment.id }, "Receipt generation deferred");
+      return null;
+    });
     await createAuditLog({
       userId: request.user.sub,
       action: "payment.create",
@@ -48,7 +81,7 @@ export async function paymentRoutes(app: FastifyInstance) {
       ipAddress: request.ip,
       userAgent: request.headers["user-agent"]?.toString()
     });
-    return ok({ payment: toPaymentDto(payment), receipt: toReceiptDto(receipt) });
+    return ok({ payment: toPaymentDto(payment), receipt: receipt ? toReceiptDto(receipt) : null });
   });
 
   app.get("/payments/:id", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
@@ -87,6 +120,10 @@ export async function paymentRoutes(app: FastifyInstance) {
       throw new AppError(404, "PAYMENT_NOT_FOUND", "Payment not found");
     }
 
+    if (payment.mode === "ONLINE") {
+      throw new AppError(422, "VALIDATION_ERROR", "Online payments are immutable; use provider refund reconciliation");
+    }
+
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setUTCDate(ninetyDaysAgo.getUTCDate() - 90);
     if (payment.paidAt < ninetyDaysAgo) {
@@ -94,20 +131,37 @@ export async function paymentRoutes(app: FastifyInstance) {
     }
 
     const nextIsVoided = body.isVoided ?? payment.isVoided;
-    const updated = await prisma.payment.update({
-      where: { id: payment.id },
-      data: {
-        amount: body.amount,
-        mode: body.mode,
-        paidAt: body.paidAt ? new Date(body.paidAt) : undefined,
-        referenceNumber: body.referenceNumber,
-        note: body.note,
-        isVoided: nextIsVoided,
-        voidedAt: nextIsVoided ? (payment.voidedAt ?? new Date()) : null
-      }
-    });
+    const updated = await prisma.$transaction(async (tx) => {
+      const rentEntry = await tx.rentEntry.findUnique({
+        where: { id: payment.rentEntryId },
+        include: { payments: true }
+      });
+      if (!rentEntry) throw new AppError(404, "RENT_ENTRY_NOT_FOUND", "Rent entry not found");
 
-    await recalculateRentEntry(updated.rentEntryId);
+      const otherPaid = rentEntry.payments
+        .filter((item) => item.id !== payment.id && !item.isVoided)
+        .reduce((sum, item) => sum + item.amount, 0);
+      if (!nextIsVoided && body.amount !== undefined && body.amount > rentEntry.amountDue - otherPaid) {
+        throw new AppError(422, "VALIDATION_ERROR", "Payment amount cannot exceed pending balance", {
+          remaining: Math.max(0, rentEntry.amountDue - otherPaid)
+        });
+      }
+
+      const next = await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          amount: body.amount,
+          mode: body.mode,
+          paidAt: body.paidAt ? new Date(body.paidAt) : undefined,
+          referenceNumber: body.referenceNumber,
+          note: body.note,
+          isVoided: nextIsVoided,
+          voidedAt: nextIsVoided ? (payment.voidedAt ?? new Date()) : null
+        }
+      });
+      await recalculateRentEntry(next.rentEntryId, tx);
+      return next;
+    }, { isolationLevel: "Serializable" });
     const receipt = nextIsVoided
       ? await voidActiveReceiptsForPayment(updated.id).then(() => null)
       : await replaceReceiptForPayment(updated.id, ownerProfileId);
@@ -139,6 +193,10 @@ export async function paymentRoutes(app: FastifyInstance) {
       throw new AppError(404, "PAYMENT_NOT_FOUND", "Payment not found");
     }
 
+    if (payment.mode === "ONLINE") {
+      throw new AppError(422, "VALIDATION_ERROR", "Online payments are immutable; use provider refund reconciliation");
+    }
+
     if (payment.isVoided) {
       throw new AppError(422, "PAYMENT_ALREADY_VOIDED", "Payment is already voided");
     }
@@ -149,14 +207,17 @@ export async function paymentRoutes(app: FastifyInstance) {
       throw new AppError(422, "PAYMENT_TOO_OLD", "Cannot void payment older than 90 days");
     }
 
-    const updated = await prisma.payment.update({
-      where: { id: payment.id },
-      data: {
-        isVoided: true,
-        voidedAt: new Date()
-      }
-    });
-    await recalculateRentEntry(updated.rentEntryId);
+    const updated = await prisma.$transaction(async (tx) => {
+      const next = await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          isVoided: true,
+          voidedAt: new Date()
+        }
+      });
+      await recalculateRentEntry(next.rentEntryId, tx);
+      return next;
+    }, { isolationLevel: "Serializable" });
     await voidActiveReceiptsForPayment(updated.id);
 
     await createAuditLog({

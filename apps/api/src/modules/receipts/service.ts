@@ -3,7 +3,9 @@ import { AppError } from "../../lib/errors.js";
 import { storageProvider, pdfProvider } from "../../providers/mock-providers.js";
 
 export async function generateReceipt(paymentId: string, ownerProfileId: string) {
-  const payment = await prisma.payment.findFirst({
+  return prisma.$transaction(async (tx) => {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`receipt:${paymentId}`}))`;
+  const payment = await tx.payment.findFirst({
     where: {
       id: paymentId,
       rentEntry: {
@@ -55,12 +57,13 @@ export async function generateReceipt(paymentId: string, ownerProfileId: string)
 
   const filePath = await storageProvider.saveBuffer(`receipts/${receiptNumber}.pdf`, pdf);
 
-  return prisma.receipt.create({
+  return tx.receipt.create({
     data: {
       paymentId: payment.id,
       receiptNumber,
       filePath
     }
+  });
   });
 }
 

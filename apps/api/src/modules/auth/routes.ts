@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireOwnerProfileId } from "../../lib/auth-guards.js";
 import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
@@ -6,6 +6,37 @@ import { ok } from "../../lib/http.js";
 import { createAuditLog } from "../common/audit.js";
 import { otpSendSchema, otpVerifySchema, profileSchema } from "../common/schemas.js";
 import { rotateRefreshToken, revokeRefreshToken, sendOtp, verifyOtp, verifyTenantOtp } from "./service.js";
+import { env } from "../../lib/env.js";
+
+const REFRESH_COOKIE_NAME = "te_refresh_token";
+const REFRESH_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+
+function setRefreshCookie(reply: FastifyReply, refreshToken: string) {
+  reply.setCookie(REFRESH_COOKIE_NAME, refreshToken, {
+    path: "/auth",
+    httpOnly: true,
+    secure: env.NODE_ENV === "production",
+    sameSite: env.NODE_ENV === "production" ? "none" : "lax",
+    maxAge: REFRESH_COOKIE_MAX_AGE_SECONDS
+  });
+}
+
+function clearRefreshCookie(reply: FastifyReply) {
+  reply.clearCookie(REFRESH_COOKIE_NAME, {
+    path: "/auth",
+    httpOnly: true,
+    secure: env.NODE_ENV === "production",
+    sameSite: env.NODE_ENV === "production" ? "none" : "lax"
+  });
+}
+
+function assertTrustedBrowserOrigin(request: FastifyRequest) {
+  if (env.NODE_ENV === "test") return;
+  const origin = request.headers.origin;
+  if (origin && origin !== env.WEB_URL) {
+    throw new AppError(403, "AUTH_FORBIDDEN", "Untrusted authentication origin");
+  }
+}
 
 function signAccessToken(
   app: FastifyInstance,
@@ -26,6 +57,20 @@ function signAccessToken(
   });
 }
 
+function authUserPayload(result: Awaited<ReturnType<typeof verifyOtp>>) {
+  const ownerProfile = result.resolvedRole === "OWNER" ? result.user.ownerProfile : null;
+
+  return {
+    id: result.user.id,
+    phone: result.user.phone,
+    role: result.resolvedRole,
+    ownerProfileId: result.ownerProfileId,
+    tenantId: result.tenantId,
+    displayName: ownerProfile?.displayName ?? undefined,
+    companyName: ownerProfile?.companyName ?? undefined
+  };
+}
+
 export async function authRoutes(app: FastifyInstance) {
   app.post("/auth/send-otp", async (request) => {
     const body = otpSendSchema.parse(request.body);
@@ -42,7 +87,7 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   // Unified verify — backend auto-detects role
-  app.post("/auth/verify-otp", async (request) => {
+  app.post("/auth/verify-otp", async (request, reply) => {
     const body = otpVerifySchema.parse(request.body);
     const result = await verifyOtp(body.phone, body.otp, body.challengeId);
 
@@ -53,6 +98,7 @@ export async function authRoutes(app: FastifyInstance) {
       ownerProfileId: result.ownerProfileId,
       tenantId: result.tenantId
     });
+    setRefreshCookie(reply, result.refreshToken);
 
     await createAuditLog({
       userId: result.user.id,
@@ -66,19 +112,45 @@ export async function authRoutes(app: FastifyInstance) {
 
     return ok({
       accessToken,
-      refreshToken: result.refreshToken,
-      user: {
-        id: result.user.id,
-        phone: result.user.phone,
-        role: result.resolvedRole,
-        ownerProfileId: result.ownerProfileId,
-        tenantId: result.tenantId
-      },
+      user: authUserPayload(result),
       isNewUser: result.isNewUser
     });
   });
 
-  app.post("/auth/tenant/verify-otp", async (request) => {
+  app.post("/auth/owner/verify-otp", async (request, reply) => {
+    const body = otpVerifySchema.parse(request.body);
+    const result = await verifyOtp(body.phone, body.otp, body.challengeId, { ownerSignup: true });
+
+    if (result.resolvedRole !== "OWNER" || !result.ownerProfileId) {
+      throw new AppError(403, "AUTH_FORBIDDEN", "Owner access is required for this phone number");
+    }
+
+    const accessToken = signAccessToken(app, {
+      userId: result.user.id,
+      phone: result.user.phone,
+      role: "OWNER",
+      ownerProfileId: result.ownerProfileId
+    });
+    setRefreshCookie(reply, result.refreshToken);
+
+    await createAuditLog({
+      userId: result.user.id,
+      action: "auth.verify_owner_otp",
+      resource: "User",
+      resourceId: result.user.id,
+      payload: { isNewUser: result.isNewUser, resolvedRole: result.resolvedRole },
+      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"]?.toString()
+    });
+
+    return ok({
+      accessToken,
+      user: authUserPayload(result),
+      isNewUser: result.isNewUser
+    });
+  });
+
+  app.post("/auth/tenant/verify-otp", async (request, reply) => {
     const body = otpVerifySchema.parse(request.body);
     const result = await verifyTenantOtp(body.phone, body.otp, body.challengeId);
 
@@ -89,6 +161,7 @@ export async function authRoutes(app: FastifyInstance) {
       ownerProfileId: result.ownerProfileId,
       tenantId: result.tenantId
     });
+    setRefreshCookie(reply, result.refreshToken);
 
     await createAuditLog({
       userId: result.user.id,
@@ -102,24 +175,19 @@ export async function authRoutes(app: FastifyInstance) {
 
     return ok({
       accessToken,
-      refreshToken: result.refreshToken,
-      user: {
-        id: result.user.id,
-        phone: result.user.phone,
-        role: result.resolvedRole,
-        ownerProfileId: result.ownerProfileId,
-        tenantId: result.tenantId
-      },
+      user: authUserPayload(result),
       isNewUser: result.isNewUser
     });
   });
 
-  app.post("/auth/refresh", async (request) => {
-    const body = request.body as { refreshToken?: string } | undefined;
-    if (!body?.refreshToken) {
+  app.post("/auth/refresh", async (request, reply) => {
+    assertTrustedBrowserOrigin(request);
+    const refreshToken = request.cookies[REFRESH_COOKIE_NAME];
+    if (!refreshToken) {
       throw new AppError(401, "AUTH_INVALID_TOKEN", "Refresh token is required");
     }
-    const result = await rotateRefreshToken(body.refreshToken);
+    const result = await rotateRefreshToken(refreshToken);
+    setRefreshCookie(reply, result.refreshToken);
 
     const accessToken = signAccessToken(app, {
       userId: result.user.id,
@@ -131,22 +199,25 @@ export async function authRoutes(app: FastifyInstance) {
 
     return ok({
       accessToken,
-      refreshToken: result.refreshToken,
       user: {
         id: result.user.id,
         phone: result.user.phone,
         role: result.resolvedRole,
         ownerProfileId: result.ownerProfileId,
-        tenantId: result.tenantId
+        tenantId: result.tenantId,
+        displayName: result.resolvedRole === "OWNER" ? result.user.ownerProfile?.displayName : undefined,
+        companyName: result.resolvedRole === "OWNER" ? result.user.ownerProfile?.companyName : undefined
       }
     });
   });
 
-  app.post("/auth/logout", async (request) => {
-    const body = request.body as { refreshToken?: string } | undefined;
-    if (body?.refreshToken) {
-      await revokeRefreshToken(body.refreshToken);
+  app.post("/auth/logout", async (request, reply) => {
+    assertTrustedBrowserOrigin(request);
+    const refreshToken = request.cookies[REFRESH_COOKIE_NAME];
+    if (refreshToken) {
+      await revokeRefreshToken(refreshToken);
     }
+    clearRefreshCookie(reply);
     await createAuditLog({
       userId: request.user?.sub ?? null,
       action: "auth.logout",

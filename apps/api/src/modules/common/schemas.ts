@@ -39,7 +39,12 @@ export const tenantInputSchema = z.object({
   roomId: uuidSchema,
   fullName: z.string().min(2).max(100),
   phone: z.string().regex(/^\d{10}$/),
-  email: z.string().email().optional().nullable(),
+  email: z.preprocess((value) => (value === "" ? null : value), z.string().email().optional().nullable()),
+  emergencyContactName: z.string().max(100).optional().nullable(),
+  emergencyContactPhone: z.preprocess((value) => (value === "" ? null : value), z.string().regex(/^\d{10}$/).optional().nullable()),
+  emergencyContactRelation: z.string().max(50).optional().nullable(),
+  aadhaarLast4: z.preprocess((value) => (value === "" ? null : value), z.string().regex(/^\d{4}$/).optional().nullable()),
+  notes: z.string().max(1000).optional().nullable(),
   moveInDate: z.string().date(),
   monthlyRent: z.number().int().min(1),
   depositPaid: z.number().int().min(0)
@@ -59,18 +64,23 @@ export const vacateInputSchema = z.object({
   finalNotes: z.string().max(1000).optional().nullable()
 });
 
+export const noticeInputSchema = z.object({
+  expectedVacateDate: z.string().date()
+});
+
 export const paymentInputSchema = z.object({
   rentEntryId: uuidSchema,
   amount: z.number().int().min(1),
-  mode: z.enum(["CASH", "UPI", "BANK_TRANSFER", "ONLINE"]),
+  mode: z.enum(["CASH", "UPI", "BANK_TRANSFER"]),
   paidAt: z.string().datetime().or(z.string().date()),
+  idempotencyKey: uuidSchema.optional(),
   referenceNumber: z.string().max(100).optional().nullable(),
   note: z.string().max(255).optional().nullable()
 });
 
 export const paymentUpdateSchema = z.object({
   amount: z.number().int().min(1).optional(),
-  mode: z.enum(["CASH", "UPI", "BANK_TRANSFER", "ONLINE"]).optional(),
+  mode: z.enum(["CASH", "UPI", "BANK_TRANSFER"]).optional(),
   paidAt: z.string().datetime().or(z.string().date()).optional(),
   referenceNumber: z.string().max(100).optional().nullable(),
   note: z.string().max(255).optional().nullable(),

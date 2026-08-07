@@ -6,9 +6,9 @@ import { useRequireRole } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { fetchApi } from "@/lib/api-client";
-import type { InvoiceDto, SubscriptionDto, SubscriptionPlanDto } from "@tenantease/types";
-import { CheckCircle2, Crown, Loader2, ReceiptText, WalletCards } from "lucide-react";
+import { ApiError, fetchApi } from "@/lib/api-client";
+import type { InvoiceDto, SubscriptionCheckoutDto, SubscriptionDto, SubscriptionPlanDto } from "@tenantease/types";
+import { CheckCircle2, Crown, ExternalLink, Loader2, ReceiptText, WalletCards } from "lucide-react";
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-IN", {
@@ -25,8 +25,10 @@ export default function SubscriptionPage() {
   const [invoices, setInvoices] = useState<InvoiceDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionPlan, setActionPlan] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadBilling = () => {
     if (!authorized) return;
 
     setLoading(true);
@@ -43,7 +45,59 @@ export default function SubscriptionPage() {
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load subscription"))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadBilling();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authorized]);
+
+  async function startCheckout(plan: string) {
+    setActionPlan(plan);
+    setActionMessage(null);
+    setError(null);
+
+    try {
+      const checkout = await fetchApi<SubscriptionCheckoutDto>("/subscription/checkout", {
+        method: "POST",
+        body: JSON.stringify({ plan })
+      });
+      setSubscription(checkout.subscription);
+      setInvoices((prev) => [checkout.invoice, ...prev.filter((invoice) => invoice.id !== checkout.invoice.id)]);
+      setActionMessage(checkout.shortUrl ? `Checkout ready: ${checkout.shortUrl}` : "Checkout subscription created.");
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Could not start checkout";
+      setError(message);
+    } finally {
+      setActionPlan(null);
+    }
+  }
+
+  async function cancelSubscription() {
+    setActionPlan("CANCEL");
+    setActionMessage(null);
+    setError(null);
+
+    try {
+      const result = await fetchApi<{ subscription: SubscriptionDto }>("/subscription/cancel", {
+        method: "POST",
+        body: JSON.stringify({ cancelAtCycleEnd: false })
+      });
+      setSubscription(result.subscription);
+      await loadInvoicesOnly();
+      setActionMessage("Subscription cancelled. Free plan is active.");
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Could not cancel subscription";
+      setError(message);
+    } finally {
+      setActionPlan(null);
+    }
+  }
+
+  async function loadInvoicesOnly() {
+    const invoiceData = await fetchApi<InvoiceDto[]>("/subscription/invoices");
+    setInvoices(invoiceData);
+  }
 
   const usagePercent = useMemo(() => {
     if (!subscription || subscription.maxProperties <= 0) return 0;
@@ -67,7 +121,7 @@ export default function SubscriptionPage() {
           </section>
           {subscription ? (
             <Badge variant={subscription.status === "ACTIVE" ? "success" : "warning"}>
-              {subscription.status}
+              {subscription.pendingPlan ? `PENDING ${subscription.pendingPlan}` : subscription.status}
             </Badge>
           ) : null}
         </div>
@@ -87,10 +141,10 @@ export default function SubscriptionPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-xl">
                     <WalletCards className="h-5 w-5 text-primary" />
-                    {subscription.plan} plan
+                      {subscription.plan} plan
                   </CardTitle>
                   <CardDescription>
-                    Current account capacity and billing feature flags.
+                    {subscription.pendingPlan ? `${subscription.pendingPlan} checkout is waiting for payment confirmation.` : "Current account capacity and billing feature flags."}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5">
@@ -119,6 +173,36 @@ export default function SubscriptionPage() {
                       </div>
                     ))}
                   </div>
+
+                  {actionMessage && (
+                    <div className="rounded-lg border border-success/30 bg-success/10 p-3 text-sm font-semibold text-success">
+                      {actionMessage.startsWith("Checkout ready: ") ? (
+                        <a
+                          href={actionMessage.replace("Checkout ready: ", "")}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 underline-offset-4 hover:underline"
+                        >
+                          Open Razorpay checkout
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      ) : (
+                        actionMessage
+                      )}
+                    </div>
+                  )}
+
+                  {subscription.plan !== "FREE" && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={actionPlan === "CANCEL"}
+                      onClick={cancelSubscription}
+                    >
+                      {actionPlan === "CANCEL" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Cancel subscription
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
 
@@ -160,12 +244,15 @@ export default function SubscriptionPage() {
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {plans.map((plan) => {
                 const isCurrent = plan.plan === subscription.plan;
+                const isPending = plan.plan === subscription.pendingPlan;
+                const isWorking = actionPlan === plan.plan;
+                const isFreePlan = plan.plan === "FREE";
                 return (
                   <Card key={plan.plan} className={`border-border/80 ${isCurrent ? "ring-2 ring-primary/30" : ""}`}>
                     <CardHeader className="space-y-3">
                       <div className="flex items-center justify-between gap-2">
                         <CardTitle className="text-lg">{plan.label}</CardTitle>
-                        {isCurrent ? <Badge variant="success">Current</Badge> : plan.recommended ? <Badge>Best fit</Badge> : null}
+                        {isCurrent ? <Badge variant="success">Current</Badge> : isPending ? <Badge variant="warning">Pending</Badge> : plan.recommended ? <Badge>Best fit</Badge> : null}
                       </div>
                       <div>
                         <p className="text-2xl font-bold text-foreground">{formatMoney(plan.priceMonthly)}</p>
@@ -186,8 +273,14 @@ export default function SubscriptionPage() {
                           </div>
                         ))}
                       </div>
-                      <Button className="w-full" disabled variant={isCurrent ? "secondary" : "outline"}>
-                        {isCurrent ? "Active plan" : "Razorpay pending"}
+                      <Button
+                        className="w-full"
+                        disabled={isCurrent || isPending || isWorking || isFreePlan}
+                        variant={isCurrent ? "secondary" : "outline"}
+                        onClick={() => startCheckout(plan.plan)}
+                      >
+                        {isWorking && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        {isCurrent ? "Active plan" : isPending ? "Awaiting payment" : isFreePlan ? "Cancel to switch" : "Start checkout"}
                       </Button>
                     </CardContent>
                   </Card>

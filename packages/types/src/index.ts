@@ -5,6 +5,7 @@ export type ApiErrorCode =
   | "AUTH_INVALID_OTP"
   | "AUTH_OTP_EXPIRED"
   | "AUTH_FORBIDDEN"
+  | "AUTH_OWNER_SIGNUP_UNAVAILABLE"
   | "VALIDATION_ERROR"
   | "NOT_FOUND"
   | "PROPERTY_NOT_FOUND"
@@ -21,6 +22,9 @@ export type ApiErrorCode =
   | "INVALID_TRANSFER"
   | "PAYMENT_TOO_OLD"
   | "PAYMENT_ALREADY_VOIDED"
+  | "ONLINE_PAYMENTS_DISABLED"
+  | "ONLINE_PAYMENT_ORDER_NOT_FOUND"
+  | "ONLINE_PAYMENT_SIGNATURE_INVALID"
   | "USER_HAS_BUSINESS_DATA"
   | "PLAN_LIMIT_PROPERTIES"
   | "PLAN_LIMIT_STAFF"
@@ -28,6 +32,7 @@ export type ApiErrorCode =
   | "AUTH_STAFF_NO_PERMISSION"
   | "SUBSCRIPTION_INACTIVE"
   | "RATE_LIMITED"
+  | "REQUEST_ERROR"
   | "SMS_SERVICE_DOWN"
   | "CONFIG_ERROR"
   | "INTERNAL_ERROR";
@@ -76,6 +81,8 @@ export type SubscriptionStatus = "ACTIVE" | "PAST_DUE" | "CANCELLED" | "EXPIRED"
 export type InvoiceStatus = "PENDING" | "PAID" | "FAILED" | "VOID";
 export type StaffRole = "MANAGER" | "ACCOUNTANT" | "WARDEN";
 export type StaffInviteStatus = "PENDING" | "ACCEPTED" | "REVOKED";
+export type TenantDocumentCategory = "KYC" | "PHOTO" | "OTHER";
+export type EnquiryStatus = "NEW" | "CONTACTED" | "CLOSED";
 
 export type AuthUser = {
   id: string;
@@ -120,6 +127,11 @@ export type TenantDto = {
   fullName: string;
   phone: string;
   email: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  emergencyContactRelation?: string | null;
+  aadhaarLast4?: string | null;
+  notes?: string | null;
   status: TenantStatus;
   moveInDate: string;
   monthlyRent: number;
@@ -207,6 +219,20 @@ export type TenantPortalHomeDto = {
   recentNotifications: NotificationDto[];
 };
 
+export type OnlinePaymentOrderStatus = "CREATED" | "PAID" | "FAILED" | "CANCELLED" | "EXPIRED";
+
+export type OnlinePaymentOrderDto = {
+  id: string;
+  rentEntryId: string;
+  amount: number;
+  currency: string;
+  status: OnlinePaymentOrderStatus;
+  providerOrderId: string;
+  providerPaymentId: string | null;
+  keyId: string;
+  createdAt: string;
+};
+
 export type NotificationDto = {
   id: string;
   title: string;
@@ -241,6 +267,7 @@ export type VacateRecordDto = {
   refundAmount: number;
   refundStatus: string;
   finalNotes: string | null;
+  settlementPdfUrl: string | null;
   createdAt: string;
 };
 
@@ -248,8 +275,58 @@ export type TenantDocumentDto = {
   id: string;
   fileName: string;
   mimeType: string;
+  category: TenantDocumentCategory;
   url: string;
   createdAt: string;
+};
+
+export type PropertyListingDto = {
+  id: string;
+  propertyId: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  contactPhone: string | null;
+  isEnabled: boolean;
+  amenities: string[];
+  publicUrl: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PublicListingDto = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  contactPhone: string | null;
+  amenities: string[];
+  property: {
+    name: string;
+    address: string;
+    city: string;
+    state: string;
+    pinCode: string;
+    type: PropertyType;
+    totalBeds: number;
+    vacantBeds: number;
+    rentMin: number | null;
+    rentMax: number | null;
+  };
+};
+
+export type EnquiryDto = {
+  id: string;
+  propertyId: string;
+  listingId: string | null;
+  name: string;
+  phone: string;
+  email: string | null;
+  message: string | null;
+  status: EnquiryStatus;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type SubscriptionFeatureFlags = {
@@ -272,6 +349,7 @@ export type SubscriptionDto = SubscriptionFeatureFlags & {
   id: string;
   ownerProfileId: string;
   plan: SubscriptionPlan;
+  pendingPlan: SubscriptionPlan | null;
   status: SubscriptionStatus;
   maxProperties: number;
   maxStaffAccounts: number;
@@ -281,6 +359,16 @@ export type SubscriptionDto = SubscriptionFeatureFlags & {
     properties: number;
     staffAccounts: number;
   };
+};
+
+export type SubscriptionCheckoutDto = {
+  plan: SubscriptionPlan;
+  amount: number;
+  providerSubscriptionId: string;
+  shortUrl: string | null;
+  keyId: string;
+  invoice: InvoiceDto;
+  subscription: SubscriptionDto;
 };
 
 export type StaffAssignmentDto = {

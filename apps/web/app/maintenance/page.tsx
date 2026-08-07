@@ -234,10 +234,10 @@ function MaintenanceContent() {
   );
 }
 
-import { useRequireRole } from "@/contexts/AuthContext";
+import { useRequireRoles } from "@/contexts/AuthContext";
 
 export default function MaintenanceBoard() {
-  const { authorized } = useRequireRole("OWNER");
+  const { authorized } = useRequireRoles(["OWNER", "STAFF"]);
   if (!authorized) return null;
 
   return (

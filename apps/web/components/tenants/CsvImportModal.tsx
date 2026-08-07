@@ -2,7 +2,8 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Loader2, UploadCloud, Download, FileText, AlertCircle, CheckCircle2 } from "lucide-react";
-import { fetchApi } from "@/lib/api-client";
+import { fetchApi, openApiBlob } from "@/lib/api-client";
+import { useAccessibleDialog } from "@/lib/useAccessibleDialog";
 
 interface Props {
   propertyId: string;
@@ -10,9 +11,8 @@ interface Props {
   onSuccess: () => void;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
 export function CsvImportModal({ propertyId, onClose, onSuccess }: Props) {
+  const dialogRef = useAccessibleDialog(onClose);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,25 +22,7 @@ export function CsvImportModal({ propertyId, onClose, onSuccess }: Props) {
     const downloadTemplate = async () => {
       setError(null);
       try {
-        const token = localStorage.getItem("te_access_token");
-        const res = await fetch(`${API_URL}/properties/${propertyId}/tenants/import/template`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
-
-        if (!res.ok) {
-          const json = await res.json().catch(() => null);
-          throw new Error(json?.error?.message || "Failed to download template");
-        }
-
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "tenants_template.csv";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
+        await openApiBlob(`/properties/${propertyId}/tenants/import/template`, "tenants_template.csv");
       } catch (err: any) {
         setError(err.message || "Failed to download template");
       }
@@ -60,19 +42,10 @@ export function CsvImportModal({ propertyId, onClose, onSuccess }: Props) {
     formData.append("file", file);
 
     try {
-      const token = localStorage.getItem("te_access_token");
-      const res = await fetch(`${API_URL}/properties/${propertyId}/tenants/import`, {
+      const json = await fetchApi<{ successCount: number; errors: { row: number; error: string }[] }>(`/properties/${propertyId}/tenants/import`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`
-        },
         body: formData
       });
-
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json?.error?.message || "Upload failed");
-      }
 
       setResult({ successCount: json.successCount, errors: json.errors });
     } catch (err: any) {
@@ -83,14 +56,14 @@ export function CsvImportModal({ propertyId, onClose, onSuccess }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in overflow-y-auto">
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="csv-import-dialog-title" tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in overflow-y-auto">
       <div className="bg-card w-full max-w-md rounded-2xl shadow-float border border-border overflow-hidden animate-slide-up my-auto">
         <div className="flex justify-between items-center p-4 border-b border-border bg-secondary/30">
           <div>
-           <h2 className="font-bold text-lg text-foreground tracking-tight">Import Tenants from CSV</h2>
+           <h2 id="csv-import-dialog-title" className="font-bold text-lg text-foreground tracking-tight">Import Tenants from CSV</h2>
            <p className="text-sm text-muted-foreground">Bulk add multiple tenants by uploading a filled CSV file.</p>
           </div>
-          <button
+          <button type="button"
             onClick={onClose}
             className="p-1.5 text-muted-foreground hover:bg-background rounded-full transition-colors"
             aria-label="Close CSV import"

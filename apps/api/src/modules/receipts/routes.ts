@@ -4,6 +4,7 @@ import { prisma } from "../../lib/db.js";
 import { AppError } from "../../lib/errors.js";
 import { ok } from "../../lib/http.js";
 import { storageProvider } from "../../providers/mock-providers.js";
+import { notificationProvider } from "../../providers/notification-provider.js";
 import { createAuditLog } from "../common/audit.js";
 import { toReceiptDto } from "../common/serializers.js";
 import { generateReceipt } from "./service.js";
@@ -112,24 +113,19 @@ export async function receiptRoutes(app: FastifyInstance) {
       throw new AppError(404, "RECEIPT_NOT_FOUND", "Receipt not found");
     }
 
-    const tenantAuthId = receipt.payment.rentEntry.tenant.id;
-    const phone = receipt.payment.rentEntry.tenant.phone;
-
-    // Send mock notification
-    app.log.info({
-        event: "MOCK_SEND_RECEIPT",
-        receiptId: receipt.id,
-        receiptNumber: receipt.receiptNumber,
-        tenantId: tenantAuthId,
-        phone: phone
-    }, `Sent receipt ${receipt.receiptNumber} to ${phone}`);
+    const tenant = receipt.payment.rentEntry.tenant;
+    const message = `Your TenantEase receipt ${receipt.receiptNumber} is ready.`;
+    await notificationProvider.send("SMS", { phone: tenant.phone, email: tenant.email }, message);
+    if (tenant.email) {
+      await notificationProvider.send("EMAIL", { phone: tenant.phone, email: tenant.email }, message);
+    }
 
     await createAuditLog({
       userId: request.user.sub,
       action: "receipt.send",
       resource: "Receipt",
       resourceId: receipt.id,
-      payload: { phone, method: "mock_sms_email" },
+      payload: { phone: tenant.phone, email: tenant.email, method: "notification_provider" },
       ipAddress: request.ip,
       userAgent: request.headers["user-agent"]?.toString()
     });

@@ -1,394 +1,488 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import { Droplets, Loader2, Send, Zap } from "lucide-react";
+import type { RoomDto, UtilityInputDto, UtilityReadingDto, UtilityType } from "@tenantease/types";
+
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { useRequireRole } from "@/contexts/AuthContext";
-import { useProperty } from "@/lib/PropertyContext";
-import { useApi } from "@/lib/useApi";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { MetricCard } from "@/components/shared/MetricCard";
+import { MoneyValue } from "@/components/shared/MoneyValue";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useRequireRoles } from "@/contexts/AuthContext";
+import { fetchApi } from "@/lib/api-client";
 import { formatPaisa } from "@/lib/format";
-import { Loader2, Zap, Droplets, Send } from "lucide-react";
-import type { RoomDto } from "@tenantease/types";
+import { paisaToRupeesInput, rupeesToPaisa } from "@/lib/money";
+import { useProperty } from "@/lib/PropertyContext";
+import { useApi } from "@/lib/useApi";
+
+type UtilityReadingRow = UtilityReadingDto & {
+  roomNumber?: string | null;
+  floor?: number | null;
+};
+
+type SubmitResult =
+  | {
+      status: "success";
+      message: string;
+      totalRooms: number;
+      totalUnits: number;
+      totalCharge: number;
+    }
+  | { status: "error"; message: string };
+
+type UtilitySubmitResponse = {
+  totalRooms: number;
+  totalUnits: number;
+  totalCharge: number;
+  message: string;
+};
 
 const UTILITY_TYPES = [
-  { value: "ELECTRICITY", label: "Electricity", icon: Zap, color: "text-yellow-500" },
-  { value: "WATER", label: "Water", icon: Droplets, color: "text-blue-500" },
+  { value: "ELECTRICITY", label: "Electricity", icon: Zap, color: "text-amber-500" },
+  { value: "WATER", label: "Water", icon: Droplets, color: "text-sky-500" }
 ] as const;
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "July", "August", "September", "October", "November", "December"
 ];
 
-export default function UtilitiesPage() {
-  const { authorized } = useRequireRole("OWNER");
-  const { activeProperty } = useProperty();
+function buildYears(currentYear: number) {
+  return [currentYear - 1, currentYear, currentYear + 1, currentYear + 2];
+}
 
+function selectedUtilityConfig(type: UtilityType) {
+  return UTILITY_TYPES.find((utility) => utility.value === type) ?? UTILITY_TYPES[0];
+}
+
+function readingValue(value: number | null | undefined) {
+  return value ?? "-";
+}
+
+function useUtilityReadings(readings: UtilityReadingRow[] | undefined) {
+  return useMemo(() => {
+    const byRoom: Record<string, UtilityReadingRow> = {};
+    let totalCharge = 0;
+    let totalUnits = 0;
+
+    for (const reading of readings ?? []) {
+      if (reading.roomId) {
+        byRoom[reading.roomId] = reading;
+      }
+      totalCharge += reading.totalCharge;
+      totalUnits += reading.unitsConsumed ?? 0;
+    }
+
+    return {
+      byRoom,
+      totalCharge,
+      totalUnits,
+      count: readings?.length ?? 0
+    };
+  }, [readings]);
+}
+
+function FiltersCard({
+  selectedType,
+  selectedMonth,
+  selectedYear,
+  years,
+  ratePerUnit,
+  onTypeChange,
+  onMonthChange,
+  onYearChange,
+  onRateChange
+}: {
+  selectedType: UtilityType;
+  selectedMonth: number;
+  selectedYear: number;
+  years: number[];
+  ratePerUnit: number;
+  onTypeChange: (value: UtilityType) => void;
+  onMonthChange: (value: number) => void;
+  onYearChange: (value: number) => void;
+  onRateChange: (value: number) => void;
+}) {
+  return (
+    <Card className="shadow-card">
+      <CardContent className="grid gap-4 p-5 sm:grid-cols-4">
+        <FilterField label="Type">
+          <select
+            value={selectedType}
+            onChange={(event) => onTypeChange(event.target.value as UtilityType)}
+            className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+          >
+            {UTILITY_TYPES.map((utility) => (
+              <option key={utility.value} value={utility.value}>{utility.label}</option>
+            ))}
+          </select>
+        </FilterField>
+        <FilterField label="Month">
+          <select
+            value={selectedMonth}
+            onChange={(event) => onMonthChange(Number.parseInt(event.target.value, 10))}
+            className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+          >
+            {MONTHS.map((month, index) => (
+              <option key={month} value={index + 1}>{month}</option>
+            ))}
+          </select>
+        </FilterField>
+        <FilterField label="Year">
+          <select
+            value={selectedYear}
+            onChange={(event) => onYearChange(Number.parseInt(event.target.value, 10))}
+            className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+          >
+            {years.map((year) => (
+              <option key={year} value={year}>{year}</option>
+            ))}
+          </select>
+        </FilterField>
+        <FilterField label="Rate/Unit (Rs)">
+          <Input
+            type="number"
+            min={1}
+            value={paisaToRupeesInput(ratePerUnit)}
+            onChange={(event) => onRateChange(rupeesToPaisa(event.target.value || "0"))}
+            className="h-10"
+          />
+        </FilterField>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FilterField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function SummaryCards({ count, totalUnits, totalCharge }: { count: number; totalUnits: number; totalCharge: number }) {
+  if (count === 0) return null;
+
+  return (
+    <section className="grid gap-4 sm:grid-cols-3">
+      <MetricCard title="Rooms Recorded" value={count} subtitle="Current filter" />
+      <MetricCard title="Total Units" value={totalUnits} subtitle="Meter usage" />
+      <MetricCard title="Total Charge" value={<MoneyValue amount={totalCharge} />} subtitle="Applied to ledgers" />
+    </section>
+  );
+}
+
+function SubmitResultCard({ result }: { result: SubmitResult | null }) {
+  if (!result) return null;
+
+  const isError = result.status === "error";
+  return (
+    <Card className={isError ? "border-destructive" : "border-success/40"}>
+      <CardContent className="p-5">
+        <p className={isError ? "text-sm font-semibold text-destructive" : "text-sm font-semibold text-success"}>
+          {result.message}
+        </p>
+        {!isError ? (
+          <p className="mt-1 text-sm font-medium text-muted-foreground">
+            {result.totalRooms} rooms, {result.totalUnits} units, {formatPaisa(result.totalCharge)}
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReadingEntryCard({
+  rooms,
+  loading,
+  selectedType,
+  selectedMonth,
+  selectedYear,
+  ratePerUnit,
+  readings,
+  existingByRoom,
+  submitting,
+  onReadingChange,
+  onSubmit
+}: {
+  rooms: RoomDto[] | undefined;
+  loading: boolean;
+  selectedType: UtilityType;
+  selectedMonth: number;
+  selectedYear: number;
+  ratePerUnit: number;
+  readings: Record<string, string>;
+  existingByRoom: Record<string, UtilityReadingRow>;
+  submitting: boolean;
+  onReadingChange: (roomId: string, value: string) => void;
+  onSubmit: () => void;
+}) {
+  const utilityConfig = selectedUtilityConfig(selectedType);
+  const UtilityIcon = utilityConfig.icon;
+  const hasInput = Object.values(readings).some((value) => value.trim() !== "");
+
+  return (
+    <Card className="shadow-card">
+      <CardHeader className="flex flex-row items-center gap-2 border-b border-border">
+        <UtilityIcon className={`h-5 w-5 ${utilityConfig.color}`} />
+        <CardTitle className="text-base">
+          Enter Meter Readings - {utilityConfig.label} ({MONTHS[selectedMonth - 1]} {selectedYear})
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-5">
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          </div>
+        ) : !rooms?.length ? (
+          <EmptyState title="No rooms found" description="Add rooms to this property before billing utilities." className="py-10" />
+        ) : (
+          <div className="space-y-4">
+            <div className="hidden grid-cols-6 gap-3 border-b border-border pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:grid">
+              <span>Room</span>
+              <span>Floor</span>
+              <span>Previous</span>
+              <span>Current</span>
+              <span>Units</span>
+              <span className="text-right">Charge</span>
+            </div>
+            {rooms.map((room) => (
+              <RoomReadingRow
+                key={room.id}
+                room={room}
+                reading={readings[room.id] ?? ""}
+                existing={existingByRoom[room.id]}
+                ratePerUnit={ratePerUnit}
+                onReadingChange={onReadingChange}
+              />
+            ))}
+            <div className="flex justify-end pt-4">
+              <Button type="button" onClick={onSubmit} disabled={submitting || !hasInput}>
+                {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                Submit Readings
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RoomReadingRow({
+  room,
+  reading,
+  existing,
+  ratePerUnit,
+  onReadingChange
+}: {
+  room: RoomDto;
+  reading: string;
+  existing?: UtilityReadingRow;
+  ratePerUnit: number;
+  onReadingChange: (roomId: string, value: string) => void;
+}) {
+  const previousReading = existing?.currentReading ?? existing?.previousReading ?? 0;
+  const currentReading = reading ? Number.parseInt(reading, 10) : null;
+  const units = currentReading !== null && currentReading >= previousReading ? currentReading - previousReading : null;
+  const charge = units !== null ? units * ratePerUnit : null;
+
+  return (
+    <div className="grid grid-cols-3 items-center gap-3 border-b border-border/50 py-3 last:border-0 sm:grid-cols-6">
+      <Badge variant="outline" className="w-fit font-mono text-xs">{room.roomNumber}</Badge>
+      <span className="hidden text-sm text-muted-foreground sm:block">{room.floor != null ? `Floor ${room.floor}` : "-"}</span>
+      <span className="font-mono text-sm text-muted-foreground">{readingValue(previousReading)}</span>
+      <Input
+        type="number"
+        placeholder="Enter reading"
+        value={reading}
+        onChange={(event) => onReadingChange(room.id, event.target.value)}
+        className="h-9 font-mono text-sm"
+        min={previousReading}
+      />
+      <span className="hidden font-mono text-sm text-foreground sm:block">{readingValue(units)}</span>
+      <span className="hidden text-right text-sm font-semibold sm:block">{charge !== null ? formatPaisa(charge) : "-"}</span>
+    </div>
+  );
+}
+
+function RecordedReadingsCard({
+  readings,
+  selectedMonth,
+  selectedYear
+}: {
+  readings: UtilityReadingRow[] | undefined;
+  selectedMonth: number;
+  selectedYear: number;
+}) {
+  if (!readings?.length) return null;
+
+  return (
+    <Card className="shadow-card">
+      <CardHeader className="border-b border-border">
+        <CardTitle className="text-base">Recorded Readings - {MONTHS[selectedMonth - 1]} {selectedYear}</CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
+                <th className="py-3 pl-5 pr-4 text-left">Room</th>
+                <th className="px-4 py-3 text-right">Previous</th>
+                <th className="px-4 py-3 text-right">Current</th>
+                <th className="px-4 py-3 text-right">Units</th>
+                <th className="py-3 pl-4 pr-5 text-right">Charge</th>
+              </tr>
+            </thead>
+            <tbody>
+              {readings.map((reading) => (
+                <tr key={reading.id} className="border-b border-border/40 last:border-0">
+                  <td className="py-3 pl-5 pr-4 font-medium">{reading.roomNumber ?? reading.roomId?.slice(0, 8) ?? "-"}</td>
+                  <td className="px-4 py-3 text-right font-mono text-muted-foreground">{readingValue(reading.previousReading)}</td>
+                  <td className="px-4 py-3 text-right font-mono">{readingValue(reading.currentReading)}</td>
+                  <td className="px-4 py-3 text-right font-mono">{readingValue(reading.unitsConsumed)}</td>
+                  <td className="py-3 pl-4 pr-5 text-right font-semibold text-primary">{formatPaisa(reading.totalCharge)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function UtilitiesPage() {
+  const { authorized } = useRequireRoles(["OWNER", "STAFF"]);
+  const { activeProperty } = useProperty();
   const now = new Date();
+  const currentYear = now.getFullYear();
+  const years = useMemo(() => buildYears(currentYear), [currentYear]);
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
-  const [selectedType, setSelectedType] = useState<string>("ELECTRICITY");
-  const [ratePerUnit, setRatePerUnit] = useState(800); // paisa — ₹8 default
-  const [submitting, setSubmitting] = useState(false);
-  const [submitResult, setSubmitResult] = useState<any>(null);
-
-  // Room-level readings: roomId -> currentReading
+  const [selectedType, setSelectedType] = useState<UtilityType>("ELECTRICITY");
+  const [ratePerUnit, setRatePerUnit] = useState(800);
   const [readings, setReadings] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null);
 
-  // Fetch rooms for this property
   const { data: rooms, loading: roomsLoading } = useApi<RoomDto[]>(
     activeProperty ? `/properties/${activeProperty.id}/rooms` : null
   );
-
-  // Fetch existing readings for this month/year/type
   const readingsUrl = activeProperty
     ? `/properties/${activeProperty.id}/utilities?month=${selectedMonth}&year=${selectedYear}&type=${selectedType}`
     : null;
-  const { data: existingReadings, loading: readingsLoading, refetch } = useApi<any[]>(readingsUrl);
-
-  const existingByRoom = useMemo(() => {
-    const map: Record<string, any> = {};
-    if (existingReadings) {
-      for (const r of existingReadings) {
-        if (r.roomId) map[r.roomId] = r;
-      }
-    }
-    return map;
-  }, [existingReadings]);
+  const { data: existingReadings, loading: readingsLoading, refetch } = useApi<UtilityReadingRow[]>(readingsUrl);
+  const readingSummary = useUtilityReadings(existingReadings ?? undefined);
 
   const handleReadingChange = useCallback((roomId: string, value: string) => {
-    setReadings((prev) => ({ ...prev, [roomId]: value }));
+    setReadings((previous) => ({ ...previous, [roomId]: value }));
   }, []);
 
-  const handleSubmit = async () => {
+  async function handleSubmit() {
     if (!activeProperty || !rooms) return;
 
-    // Build readings array only for rooms with entered values
-    const readingEntries = rooms
-      .filter((room) => readings[room.id] && readings[room.id].trim() !== "")
-      .map((room) => {
-        const entry: any = {
-          roomId: room.id,
-          currentReading: parseInt(readings[room.id], 10),
-        };
-        const existing = existingByRoom[room.id];
-        if (existing?.currentReading != null) {
-          entry.previousReading = existing.currentReading;
-        }
-        return entry;
-      });
-
+    const readingEntries = buildReadingEntries(rooms, readings, readingSummary.byRoom);
     if (readingEntries.length === 0) return;
 
     setSubmitting(true);
     setSubmitResult(null);
 
     try {
-      const token = localStorage.getItem("te_access_token");
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/properties/${activeProperty.id}/utilities`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            utilityType: selectedType,
-            month: selectedMonth,
-            year: selectedYear,
-            billingModel: "INDIVIDUAL_METER",
-            ratePerUnit,
-            readings: readingEntries,
-          }),
-        }
-      );
-      const json = await res.json();
-      if (json.success) {
-        setSubmitResult(json);
-        setReadings({});
-        refetch();
-      } else {
-        setSubmitResult({ error: json.error?.message || "Submission failed" });
-      }
-    } catch {
-      setSubmitResult({ error: "Network error" });
+      const result = await fetchApi<UtilitySubmitResponse>(`/properties/${activeProperty.id}/utilities`, {
+        method: "POST",
+        body: JSON.stringify({
+          utilityType: selectedType,
+          month: selectedMonth,
+          year: selectedYear,
+          billingModel: "INDIVIDUAL_METER",
+          ratePerUnit,
+          readings: readingEntries
+        } satisfies UtilityInputDto)
+      });
+      setSubmitResult({ status: "success", ...result });
+      setReadings({});
+      refetch();
+    } catch (error) {
+      setSubmitResult({
+        status: "error",
+        message: error instanceof Error ? error.message : "Unable to submit readings."
+      });
     } finally {
       setSubmitting(false);
     }
-  };
+  }
 
   if (!authorized) return null;
-
-  const utilityConfig = UTILITY_TYPES.find((u) => u.value === selectedType) ?? UTILITY_TYPES[0];
-  const UtilIcon = utilityConfig.icon;
-
-  const totalCharge = existingReadings
-    ? existingReadings.reduce((sum, r) => sum + r.totalCharge, 0)
-    : 0;
-  const totalUnits = existingReadings
-    ? existingReadings.reduce((sum, r) => sum + (r.unitsConsumed ?? 0), 0)
-    : 0;
 
   return (
     <DashboardLayout activePath="/utilities">
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Utility Billing
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Record meter readings and apply charges to tenant rent entries.
-            </p>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {/* Utility Type */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Type
-                </label>
-                <select
-                  value={selectedType}
-                  onChange={(e) => setSelectedType(e.target.value)}
-                  className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
-                >
-                  {UTILITY_TYPES.map((u) => (
-                    <option key={u.value} value={u.value}>{u.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Month */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Month
-                </label>
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(parseInt(e.target.value, 10))}
-                  className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
-                >
-                  {MONTHS.map((m, i) => (
-                    <option key={i} value={i + 1}>{m}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Year */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Year
-                </label>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
-                  className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
-                >
-                  {[2024, 2025, 2026, 2027].map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Rate per Unit */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Rate/Unit (₹)
-                </label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={(ratePerUnit / 100).toFixed(2)}
-                  onChange={(e) => setRatePerUnit(Math.round(parseFloat(e.target.value || "0") * 100))}
-                  className="h-10"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Summary Cards */}
-        {existingReadings && existingReadings.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            <Card>
-              <CardContent className="pt-5 pb-4 flex flex-col items-center">
-                <span className="text-xs font-semibold uppercase text-muted-foreground">Rooms Recorded</span>
-                <span className="text-2xl font-bold text-foreground mt-1">{existingReadings.length}</span>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-5 pb-4 flex flex-col items-center">
-                <span className="text-xs font-semibold uppercase text-muted-foreground">Total Units</span>
-                <span className="text-2xl font-bold text-foreground mt-1">{totalUnits}</span>
-              </CardContent>
-            </Card>
-            <Card className="col-span-2 sm:col-span-1">
-              <CardContent className="pt-5 pb-4 flex flex-col items-center">
-                <span className="text-xs font-semibold uppercase text-muted-foreground">Total Charge</span>
-                <span className="text-2xl font-bold text-primary mt-1">{formatPaisa(totalCharge)}</span>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* Submit Result */}
-        {submitResult && (
-          <Card className={submitResult.error ? "border-destructive" : "border-green-500"}>
-            <CardContent className="pt-5 pb-4">
-              {submitResult.error ? (
-                <p className="text-destructive text-sm font-medium">❌ {submitResult.error}</p>
-              ) : (
-                <div className="space-y-1">
-                  <p className="text-green-600 text-sm font-semibold">✅ {submitResult.message || "Readings submitted successfully!"}</p>
-                  {submitResult.data && (
-                    <p className="text-sm text-muted-foreground">
-                      {submitResult.data.totalRooms} rooms · {submitResult.data.totalUnits} units · {formatPaisa(submitResult.data.totalCharge)}
-                    </p>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Room-wise Reading Entry */}
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2">
-            <UtilIcon className={`w-5 h-5 ${utilityConfig.color}`} />
-            <CardTitle className="text-base">
-              Enter Meter Readings — {utilityConfig.label} ({MONTHS[selectedMonth - 1]} {selectedYear})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {roomsLoading || readingsLoading ? (
-              <div className="flex justify-center py-12">
-                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : !rooms || rooms.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                No rooms found. Add rooms to this property first.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {/* Table header */}
-                <div className="hidden sm:grid grid-cols-6 gap-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground pb-2 border-b border-border">
-                  <span>Room</span>
-                  <span>Floor</span>
-                  <span>Previous</span>
-                  <span>Current</span>
-                  <span>Units</span>
-                  <span className="text-right">Charge</span>
-                </div>
-
-                {rooms.map((room) => {
-                  const existing = existingByRoom[room.id];
-                  const prevReading = existing?.currentReading ?? existing?.previousReading ?? 0;
-                  const currentVal = readings[room.id] ?? "";
-                  const currentNum = currentVal ? parseInt(currentVal, 10) : null;
-                  const units = currentNum != null && currentNum >= prevReading ? currentNum - prevReading : null;
-                  const charge = units != null ? units * ratePerUnit : null;
-
-                  return (
-                    <div
-                      key={room.id}
-                      className="grid grid-cols-3 sm:grid-cols-6 gap-3 items-center py-3 border-b border-border/50 last:border-0"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="font-mono text-xs">
-                          {room.roomNumber}
-                        </Badge>
-                      </div>
-                      <span className="text-sm text-muted-foreground hidden sm:block">
-                        {room.floor != null ? `Floor ${room.floor}` : "—"}
-                      </span>
-                      <span className="text-sm font-mono text-muted-foreground">
-                        {existing ? (existing.currentReading ?? existing.previousReading ?? "—") : "—"}
-                      </span>
-                      <Input
-                        type="number"
-                        placeholder="Enter reading"
-                        value={currentVal}
-                        onChange={(e) => handleReadingChange(room.id, e.target.value)}
-                        className="h-9 font-mono text-sm"
-                        min={prevReading}
-                      />
-                      <span className="text-sm font-mono text-foreground hidden sm:block">
-                        {units != null ? units : "—"}
-                      </span>
-                      <span className="text-sm font-semibold text-right hidden sm:block">
-                        {charge != null ? formatPaisa(charge) : "—"}
-                      </span>
-                    </div>
-                  );
-                })}
-
-                {/* Submit button */}
-                <div className="flex justify-end pt-4">
-                  <Button
-                    onClick={handleSubmit}
-                    disabled={submitting || Object.values(readings).filter(Boolean).length === 0}
-                    className="gap-2"
-                  >
-                    {submitting ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4" />
-                    )}
-                    Submit Readings
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Existing Readings Table */}
-        {existingReadings && existingReadings.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                Recorded Readings — {MONTHS[selectedMonth - 1]} {selectedYear}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
-                      <th className="text-left py-2 pr-4">Room</th>
-                      <th className="text-right py-2 px-4">Previous</th>
-                      <th className="text-right py-2 px-4">Current</th>
-                      <th className="text-right py-2 px-4">Units</th>
-                      <th className="text-right py-2 pl-4">Charge</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {existingReadings.map((r: any) => (
-                      <tr key={r.id} className="border-b border-border/40">
-                        <td className="py-2.5 pr-4 font-medium">{r.roomNumber ?? r.roomId?.substring(0, 8)}</td>
-                        <td className="py-2.5 px-4 text-right font-mono text-muted-foreground">{r.previousReading ?? "—"}</td>
-                        <td className="py-2.5 px-4 text-right font-mono">{r.currentReading ?? "—"}</td>
-                        <td className="py-2.5 px-4 text-right font-mono">{r.unitsConsumed ?? "—"}</td>
-                        <td className="py-2.5 pl-4 text-right font-semibold text-primary">{formatPaisa(r.totalCharge)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        <PageHeader
+          title="Utility Billing"
+          description="Record meter readings and apply replace-safe charges to tenant rent entries."
+        />
+        <FiltersCard
+          selectedType={selectedType}
+          selectedMonth={selectedMonth}
+          selectedYear={selectedYear}
+          years={years}
+          ratePerUnit={ratePerUnit}
+          onTypeChange={setSelectedType}
+          onMonthChange={setSelectedMonth}
+          onYearChange={setSelectedYear}
+          onRateChange={setRatePerUnit}
+        />
+        <SummaryCards
+          count={readingSummary.count}
+          totalUnits={readingSummary.totalUnits}
+          totalCharge={readingSummary.totalCharge}
+        />
+        <SubmitResultCard result={submitResult} />
+        <ReadingEntryCard
+          rooms={rooms ?? undefined}
+          loading={roomsLoading || readingsLoading}
+          selectedType={selectedType}
+          selectedMonth={selectedMonth}
+          selectedYear={selectedYear}
+          ratePerUnit={ratePerUnit}
+          readings={readings}
+          existingByRoom={readingSummary.byRoom}
+          submitting={submitting}
+          onReadingChange={handleReadingChange}
+          onSubmit={handleSubmit}
+        />
+        <RecordedReadingsCard readings={existingReadings ?? undefined} selectedMonth={selectedMonth} selectedYear={selectedYear} />
       </div>
     </DashboardLayout>
   );
+}
+
+function buildReadingEntries(
+  rooms: RoomDto[],
+  readings: Record<string, string>,
+  existingByRoom: Record<string, UtilityReadingRow>
+): UtilityInputDto["readings"] {
+  return rooms.flatMap((room) => {
+    const value = readings[room.id]?.trim();
+    if (!value) return [];
+
+    const currentReading = Number.parseInt(value, 10);
+    if (!Number.isFinite(currentReading)) return [];
+
+    const existing = existingByRoom[room.id];
+    return [{
+      roomId: room.id,
+      currentReading,
+      ...(existing?.currentReading != null ? { previousReading: existing.currentReading } : {})
+    }];
+  });
 }

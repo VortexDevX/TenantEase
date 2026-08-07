@@ -1,0 +1,29 @@
+name: Scheduled jobs
+
+on:
+  schedule:
+    - cron: "15 1 * * *"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        endpoint:
+          - cron/rent/generate
+          - cron/reminders
+          - system/sync-occupancy
+    steps:
+      - name: Call ${{ matrix.endpoint }}
+        env:
+          API_URL: ${{ secrets.TENANTEASE_API_URL }}
+          CRON_SECRET: ${{ secrets.TENANTEASE_CRON_SECRET }}
+        run: |
+          test -n "$API_URL" && test -n "$CRON_SECRET"
+          curl --fail-with-body --retry 3 --retry-all-errors \
+            -X POST "${API_URL%/}/${{ matrix.endpoint }}" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            --data '{}'

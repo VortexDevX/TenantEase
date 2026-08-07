@@ -52,7 +52,11 @@ const PLAN_DEFINITIONS: Record<SubscriptionPlan, Omit<SubscriptionPlanDto, "plan
   }
 };
 
-function planData(plan: SubscriptionPlan) {
+export function getPlanDefinition(plan: SubscriptionPlan) {
+  return PLAN_DEFINITIONS[plan];
+}
+
+export function planData(plan: SubscriptionPlan) {
   const definition = PLAN_DEFINITIONS[plan];
   return {
     plan,
@@ -91,11 +95,12 @@ export async function ensureSubscription(ownerProfileId: string, db: DbClient = 
   });
 }
 
-export function toSubscriptionDto(subscription: Subscription, propertyCount: number, staffCount: number): SubscriptionDto {
+function toSubscriptionDto(subscription: Subscription, propertyCount: number, staffCount: number): SubscriptionDto {
   return {
     id: subscription.id,
     ownerProfileId: subscription.ownerProfileId,
     plan: subscription.plan,
+    pendingPlan: subscription.pendingPlan,
     status: subscription.status,
     maxProperties: subscription.maxProperties,
     maxStaffAccounts: subscription.maxStaffAccounts,
