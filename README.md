@@ -273,12 +273,12 @@ cmd /c "npx -y fallow@latest dead-code --format json --quiet --explain --unused-
 corepack pnpm outdated --recursive
 ```
 
-API tests use `DATABASE_URL_TEST` (or derive a database name ending in `_test`) and refuse a database name without `test`. Create and migrate that isolated database before running them.
+Create and migrate a dedicated database with a name ending in `_test` before running API or browser tests. Browser tests require `DATABASE_URL_TEST` and launch their own API and web processes with mock providers. Run `corepack pnpm --filter @tenantease/web exec playwright install chromium` to install the workspace Chromium version.
 
 ## Version Compatibility Notes
 
 - TypeScript `baseUrl` was removed from shared config to avoid future TypeScript 7 deprecation problems.
-- Current dependency baseline has been verified on Prisma 7.8, TypeScript 6, Vite 8, Vitest 4.1.8, Zod 4, and Fastify CORS 11.
+- Current dependency baseline includes Next.js 16.4, Prisma 7.10, Fastify 5.12, TypeScript 6, Vite 8, Vitest 4.1.8, Zod 4, and Fastify CORS 11.
 - Prisma datasource URL and seed command live in `apps/api/prisma.config.ts`; Prisma Client uses `@prisma/adapter-pg`.
 - Current Prisma migrations include the MVP gap closure, subscription foundation, and staff assignments. Run `corepack pnpm prisma:migrate` after pulling these changes.
 - CI enforces typecheck, API tests, production build, production audit, migrations, and Playwright smoke tests.

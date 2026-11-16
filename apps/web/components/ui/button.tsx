@@ -42,7 +42,7 @@ interface ButtonProps
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, type = "button", ...props }, ref) => {
     if (asChild) {
       // render children with button classes
       const child = React.Children.only(props.children) as React.ReactElement;
@@ -54,6 +54,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     return (
       <button
+        type={type}
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         {...props}

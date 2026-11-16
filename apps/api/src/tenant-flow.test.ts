@@ -375,14 +375,22 @@ describe("Tenant Flow Integration", () => {
     expect(claimsRes.statusCode).toBe(200);
     expect(claimsRes.json().data).toEqual(expect.arrayContaining([expect.objectContaining({ id: claimId, status: "PENDING" })]));
 
-    const approveRes = await app.inject({
-      method: "POST",
+    const resolveClaim = {
+      method: "POST" as const,
       url: `/payment-claims/${claimId}/resolve`,
       headers: { authorization: `Bearer ${ownerToken}` },
       payload: { decision: "APPROVE" }
+    };
+    const approvals = await Promise.all([app.inject(resolveClaim), app.inject(resolveClaim)]);
+    expect(approvals.map((response) => response.statusCode).sort()).toEqual([200, 409]);
+    expect(approvals.find((response) => response.statusCode === 200)?.json().data.status).toBe("APPROVED");
+
+    const rejection = await app.inject({
+      ...resolveClaim,
+      payload: { decision: "REJECT", reason: "Already reviewed" }
     });
-    expect(approveRes.statusCode).toBe(200);
-    expect(approveRes.json().data.status).toBe("APPROVED");
+    expect(rejection.statusCode).toBe(409);
+    expect(await prisma.payment.count({ where: { rentEntryId: rentEntry.id } })).toBe(1);
     const rentAfterApproval = await prisma.rentEntry.findUnique({ where: { id: rentEntry.id } });
     expect(rentAfterApproval?.amountPaid).toBe(250000);
   });

@@ -28,8 +28,8 @@ function TenantMaintenanceContent() {
   if (!user?.hasBooking) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center animate-fade-in">
-        <div className="w-20 h-20 border border-white/[0.06] bg-white/[0.02] shadow-glass rounded-2xl flex items-center justify-center">
-          <Clock className="w-10 h-10 text-violet-400" />
+        <div className="w-20 h-20 border border-border bg-secondary/50 shadow-glass rounded-2xl flex items-center justify-center">
+          <Clock className="w-10 h-10 text-primary" />
         </div>
         <h2 className="text-2xl font-bold text-foreground">No Active Booking</h2>
         <p className="text-muted-foreground max-w-sm font-semibold">
@@ -55,7 +55,7 @@ function TenantMaintenanceContent() {
         title="Maintenance"
         description="Track and log issues in your room or property."
         actions={
-          <Button onClick={() => setIsCreating(true)} className="bg-violet-500 hover:bg-violet-600 text-white font-bold rounded-xl shadow-md hover:shadow-violet-500/20">
+          <Button onClick={() => setIsCreating(true)} className="bg-primary hover:bg-primary text-white font-bold rounded-xl shadow-md hover:shadow-violet-500/20">
             <Plus className="w-4 h-4 mr-2" /> New Request
           </Button>
         }
@@ -63,10 +63,10 @@ function TenantMaintenanceContent() {
 
       <div className="grid gap-4 mt-4">
         {loading ? (
-          <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-violet-400" /></div>
+          <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
         ) : maintenanceReqs?.length ? (
           maintenanceReqs.map((req) => (
-            <Card key={req.id} className="shadow-glass border-white/[0.06] bg-white/[0.02] hover:border-violet-500/30 transition-all duration-300">
+            <Card key={req.id} className="shadow-glass border-border bg-secondary/50 hover:border-primary/30 transition-all duration-300">
               <CardContent className="p-5 flex flex-col gap-4">
                 <div className="flex justify-between items-start gap-4">
                   <div className="flex flex-col gap-1">
@@ -79,8 +79,8 @@ function TenantMaintenanceContent() {
                 <p className="text-sm font-semibold text-muted-foreground leading-relaxed">{req.description}</p>
 
                 {req.assignedWorkerName && (
-                  <div className="bg-white/[0.01] border border-white/[0.04] p-3 rounded-lg text-sm text-foreground">
-                    <span className="font-bold text-violet-400">Assigned to:</span> {req.assignedWorkerName} {req.assignedWorkerPhone ? `(${req.assignedWorkerPhone})` : ''}
+                  <div className="bg-secondary/50 border border-border p-3 rounded-lg text-sm text-foreground">
+                    <span className="font-bold text-primary">Assigned to:</span> {req.assignedWorkerName} {req.assignedWorkerPhone ? `(${req.assignedWorkerPhone})` : ''}
                   </div>
                 )}
               </CardContent>
@@ -90,13 +90,13 @@ function TenantMaintenanceContent() {
           <EmptyState
             title="No Maintenance Requests"
             description="You haven't reported any issues. Everything looking good?"
-            icon={<Wrench className="text-violet-400" />}
+            icon={<Wrench className="text-primary" />}
             action={
-              <Button variant="outline" className="mt-2 border-white/[0.08] hover:bg-white/[0.04] text-violet-400 hover:text-violet-300" onClick={() => setIsCreating(true)}>
+              <Button variant="outline" className="mt-2 border-border hover:bg-secondary/50 text-primary hover:text-primary" onClick={() => setIsCreating(true)}>
                 Report an Issue
               </Button>
             }
-            className="py-16 border border-white/[0.06] bg-white/[0.01] rounded-xl shadow-glass"
+            className="py-16 border border-border bg-secondary/50 rounded-xl shadow-glass"
           />
         )}
       </div>

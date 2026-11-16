@@ -1,52 +1,60 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { fetchApi } from "./api-client";
 
-interface UseApiOptions {
-  enabled?: boolean;
-}
-
-interface UseApiResult<T> {
+interface RequestState<T> {
+  path: string;
   data: T | null;
-  loading: boolean;
   error: string | null;
-  refetch: () => void;
-  mutate: () => void;
+  loading: boolean;
 }
 
-/**
- * Generic data-fetching hook for API endpoints.
- */
-export function useApi<T>(path: string | null, options?: UseApiOptions): UseApiResult<T> {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const enabled = options?.enabled ?? true;
-  const pathRef = useRef(path);
-  pathRef.current = path;
-
-  const load = useCallback(async () => {
-    const currentPath = pathRef.current;
-    if (!currentPath || !enabled) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await fetchApi<T>(currentPath);
-      setData(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
-    } finally {
-      setLoading(false);
-    }
-  }, [enabled]);
+export function useApi<T>(path: string | null, options?: { enabled?: boolean }) {
+  const requestPath = options?.enabled === false ? null : path;
+  const [request, setRequest] = useState<RequestState<T> | null>(null);
+  const [revision, setRevision] = useState(0);
+  const refetch = useCallback(() => setRevision((current) => current + 1), []);
 
   useEffect(() => {
-    load();
-  }, [load, path]);
+    if (!requestPath) {
+      setRequest(null);
+      return;
+    }
 
-  return { data, loading, error, refetch: load, mutate: load };
+    const controller = new AbortController();
+    setRequest((current) => ({
+      path: requestPath,
+      data: current?.path === requestPath ? current.data : null,
+      error: null,
+      loading: true,
+    }));
+
+    fetchApi<T>(requestPath, { signal: controller.signal }).then(
+      (data) => {
+        if (!controller.signal.aborted) setRequest({ path: requestPath, data, error: null, loading: false });
+      },
+      (error: unknown) => {
+        if (!controller.signal.aborted) {
+          setRequest({
+            path: requestPath,
+            data: null,
+            error: error instanceof Error ? error.message : "Request failed",
+            loading: false,
+          });
+        }
+      },
+    );
+
+    return () => controller.abort();
+  }, [requestPath, revision]);
+
+  const current = request?.path === requestPath ? request : null;
+  return {
+    data: current?.data ?? null,
+    error: current?.error ?? null,
+    loading: Boolean(requestPath) && (current?.loading ?? true),
+    refetch,
+    mutate: refetch,
+  };
 }

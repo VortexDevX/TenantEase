@@ -59,10 +59,10 @@ export async function tenantRoutes(app: FastifyInstance) {
   app.post("/properties/:propertyId/tenants", { preHandler: [app.authenticateOwnerOrStaff] }, async (request) => {
     const params = request.params as { propertyId: string };
     const body = tenantInputSchema.parse({ ...(request.body as object), propertyId: params.propertyId });
-    const { ownerProfileId } = await assertPropertyAccess(request, params.propertyId, "tenant:write");
+    await assertPropertyAccess(request, params.propertyId, "tenant:write");
     const tenant = await prisma.$transaction(async (tx) => {
       await lockRoom(tx, body.roomId);
-      await assertRoomAvailability(body.roomId, ownerProfileId, tx);
+      await assertRoomAvailability(body.roomId, params.propertyId, tx);
       const existingActiveTenant = await tx.tenant.findFirst({
         where: { phone: body.phone, status: { in: ["ACTIVE", "NOTICE"] } },
         select: { id: true }
@@ -169,28 +169,25 @@ export async function tenantRoutes(app: FastifyInstance) {
       throw new AppError(422, "TENANT_ALREADY_VACATED", "Tenant already vacated");
     }
 
-    const pending = await prisma.rentEntry.aggregate({
-      where: {
-        tenantId: tenant.id,
-        status: { in: ["UNPAID", "PARTIAL", "OVERDUE"] }
-      },
-      _sum: {
-        amountDue: true,
-        amountPaid: true
-      }
-    });
-    const pendingRent = Math.max(0, (pending._sum.amountDue ?? 0) - (pending._sum.amountPaid ?? 0));
-    const refundAmount = Math.max(0, tenant.depositPaid - body.damageDeduction - pendingRent);
-
     const result = await prisma.$transaction(async (tx) => {
-      const updatedTenant = await tx.tenant.update({
-        where: { id: tenant.id },
+      await lockRoom(tx, tenant.roomId);
+      const updated = await tx.tenant.updateMany({
+        where: { id: tenant.id, roomId: tenant.roomId, updatedAt: tenant.updatedAt, status: { not: "VACATED" } },
         data: {
           status: "VACATED",
           vacatedAt: new Date(body.vacatedAt),
           expectedVacateDate: null
         }
       });
+      if (updated.count !== 1) throw new AppError(409, "VALIDATION_ERROR", "Tenant changed. Refresh and try again.");
+      const updatedTenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenant.id } });
+
+      const pending = await tx.rentEntry.aggregate({
+        where: { tenantId: tenant.id, status: { in: ["UNPAID", "PARTIAL", "OVERDUE"] } },
+        _sum: { amountDue: true, amountPaid: true }
+      });
+      const pendingRent = Math.max(0, (pending._sum.amountDue ?? 0) - (pending._sum.amountPaid ?? 0));
+      const refundAmount = Math.max(0, tenant.depositPaid - body.damageDeduction - pendingRent);
 
       const vacateRecord = await tx.vacateRecord.create({
         data: {
@@ -209,8 +206,9 @@ export async function tenantRoutes(app: FastifyInstance) {
 
       await recalculateRoom(tenant.roomId, tx);
 
-      return { updatedTenant, vacateRecord };
-    });
+      return { updatedTenant, vacateRecord, pendingRent, refundAmount };
+    }, { isolationLevel: "Serializable" });
+    const { pendingRent, refundAmount } = result;
 
     let vacateRecord = result.vacateRecord;
     try {
@@ -314,18 +312,23 @@ export async function tenantRoutes(app: FastifyInstance) {
     if (tenant.roomId === body.roomId) {
       throw new AppError(422, "INVALID_TRANSFER", "Tenant is already assigned to that room");
     }
+    if (tenant.status === "VACATED") {
+      throw new AppError(422, "INVALID_TRANSFER", "Vacated tenants cannot change rooms");
+    }
 
     const effectiveDate = body.effectiveDate ? new Date(body.effectiveDate) : new Date();
     const result = await prisma.$transaction(async (tx) => {
       for (const roomId of [tenant.roomId, body.roomId].sort()) await lockRoom(tx, roomId);
-      await assertRoomAvailability(body.roomId, ownerProfileId, tx);
-      const updatedTenant = await tx.tenant.update({
-        where: { id: tenant.id },
+      await assertRoomAvailability(body.roomId, tenant.propertyId, tx);
+      const updated = await tx.tenant.updateMany({
+        where: { id: tenant.id, roomId: tenant.roomId, updatedAt: tenant.updatedAt, status: { not: "VACATED" } },
         data: {
           roomId: body.roomId,
           monthlyRent: body.monthlyRent ?? tenant.monthlyRent
         }
       });
+      if (updated.count !== 1) throw new AppError(409, "INVALID_TRANSFER", "Tenant changed. Refresh and try again.");
+      const updatedTenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenant.id } });
 
       const transferRecord = await tx.roomTransferRecord.create({
         data: {

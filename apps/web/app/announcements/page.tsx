@@ -10,6 +10,7 @@ import { useApi } from "@/lib/useApi";
 import { Plus, Megaphone, Loader2, AlertCircle, Calendar } from "lucide-react";
 import { AnnouncementModal } from "@/components/announcements/AnnouncementModal";
 import { useRequireRoles } from "@/contexts/AuthContext";
+import { PageHeader } from "@/components/shared/PageHeader";
 
 type AnnouncementCategory = "GENERAL" | "MAINTENANCE" | "PAYMENT" | "RULE_CHANGE" | "EMERGENCY";
 
@@ -27,7 +28,7 @@ interface AnnouncementDto {
 }
 
 function AnnouncementsContent() {
-  const { activeProperty, loading: propLoading } = useProperty();
+  const { activeProperty, staffRole, loading: propLoading } = useProperty();
   const propertyId = activeProperty?.id;
   const [showModal, setShowModal] = useState(false);
 
@@ -61,20 +62,12 @@ function AnnouncementsContent() {
       )}
 
       {/* Header & Actions */}
-      <section className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <Megaphone className="w-8 h-8 text-primary" />
-            Announcements
-          </h1>
-          <p className="text-muted-foreground font-medium text-sm mt-1">
-            {isLoading ? "Loading..." : `Broadcast messages to your tenants.`}
-          </p>
-        </div>
-        <Button onClick={() => setShowModal(true)} disabled={!propertyId} className="shadow-float">
-           <Plus className="mr-2" size={18} /> Post Announcement
-        </Button>
-      </section>
+      <PageHeader title="Announcements" description="Property notices and updates for tenants."
+        actions={staffRole !== "ACCOUNTANT" && (
+          <Button onClick={() => setShowModal(true)} disabled={!propertyId}>
+            <Plus size={18} aria-hidden="true" /> Post announcement
+          </Button>
+        )} />
 
       {/* List Grid */}
       {isLoading ? (

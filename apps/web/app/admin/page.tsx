@@ -8,13 +8,10 @@ import {
   BriefcaseBusiness,
   CheckCircle2,
   Clock,
-  Database,
   Loader2,
-  Lock,
   RefreshCw,
   Search,
   Shield,
-  ShieldAlert,
   ShieldCheck,
   Trash2,
   User,
@@ -25,6 +22,7 @@ import { AdminLayout } from "@/components/layout/AdminLayout";
 import { useRequireRole } from "@/contexts/AuthContext";
 import { useApi } from "@/lib/useApi";
 import { ApiError, fetchApi } from "@/lib/api-client";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -265,59 +263,16 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
     );
   }
 
-  return (    <div className="flex flex-col gap-5 animate-fade-in pb-10">
-      <section className="rounded-xl border border-rose-500/20 bg-rose-500/[0.02] p-5 shadow-glass-rose">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-rose-500/10 text-rose-500 border border-rose-500/20">
-                <ShieldAlert className="h-6 w-6 animate-pulse" />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-rose-500">Admin console</p>
-                <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground md:text-3xl">Users, Roles, And Access</h1>
-              </div>
-            </div>
-              <p className="mt-3 max-w-2xl text-sm font-medium text-muted-foreground">
-              Review accounts, change roles, block risky users, inspect audit activity, and remove only empty accounts.
-            </p>
-          </div>
+  return (
+    <div className="grid gap-5">
+      <PageHeader title="Users, roles and access" description="Manage accounts and review recent audit activity."
+        actions={<Button variant="outline" onClick={refetch} disabled={loading}>
+          {loading ? <Loader2 size={17} className="animate-spin" aria-hidden="true" /> : <RefreshCw size={17} aria-hidden="true" />}
+          Refresh
+        </Button>} />
 
-          <Button variant="outline" onClick={refetch} disabled={loading} className="gap-2 border-white/[0.08] hover:bg-white/[0.04]">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Refresh
-          </Button>
-        </div>
-      </section>
-
-      <section className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-        <Card className="border-white/[0.06] bg-white/[0.02]">
-          <CardContent className="grid gap-3 p-4 md:grid-cols-3">
-            <div className="rounded-lg border border-rose-500/10 bg-rose-500/[0.02] p-4">
-              <div className="flex items-center gap-2 text-sm font-bold text-rose-400">
-                <Lock className="h-4 w-4 text-rose-500" />
-                Admin guard
-              </div>
-              <p className="mt-2 text-xs font-medium text-muted-foreground">Admins cannot demote, block, or delete other admins from UI/API.</p>
-            </div>
-            <div className="rounded-lg border border-white/[0.08] bg-white/[0.01] p-4">
-              <div className="flex items-center gap-2 text-sm font-bold text-primary">
-                <BriefcaseBusiness className="h-4 w-4 text-primary" />
-                Business data
-              </div>
-              <p className="mt-2 text-xs font-medium text-muted-foreground">Users with properties or tenant records can be blocked, not deleted.</p>
-            </div>
-            <div className="rounded-lg border border-success/10 bg-success-soft/5 p-4">
-              <div className="flex items-center gap-2 text-sm font-bold text-success">
-                <Database className="h-4 w-4 text-success" />
-                DB editor
-              </div>
-              <code className="mt-2 block rounded-md bg-white/[0.04] border border-white/[0.06] px-2 py-1 text-[11px] font-semibold text-foreground">corepack pnpm db:studio</code>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-white/[0.06] bg-white/[0.02]">
+      <section aria-label="Recent audit activity">
+        <Card className="border-border bg-secondary/50">
           <CardContent className="p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -329,11 +284,11 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
             <div className="mt-3 flex max-h-44 flex-col gap-2 overflow-auto pr-1">
               {auditLoading ? (
                 <div className="flex h-20 items-center justify-center">
-                  <Loader2 className="h-5 w-5 animate-spin text-rose-500" />
+                  <Loader2 className="h-5 w-5 animate-spin text-destructive" />
                 </div>
               ) : auditData?.items.length ? (
                 auditData.items.map((item) => (
-                  <div key={item.id} className="rounded-lg border border-white/[0.06] bg-white/[0.01] p-3 hover:bg-white/[0.02] transition-colors">
+                  <div key={item.id} className="rounded-lg border border-border bg-secondary/50 p-3 hover:bg-secondary/50 transition-colors">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-xs font-bold text-foreground">{item.action}</p>
                       <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
@@ -354,8 +309,8 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
         </Card>
       </section>
 
-      <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Card className="border-white/[0.06] bg-white/[0.02] shadow-glass">
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <Card className="border-border bg-secondary/50 shadow-glass">
           <CardContent className="flex items-center justify-between p-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Total</p>
@@ -364,16 +319,16 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
             <Users className="h-5 w-5 text-muted-foreground opacity-55" />
           </CardContent>
         </Card>
-        <Card className="border-white/[0.06] bg-white/[0.02] shadow-glass">
+        <Card className="border-border bg-secondary/50 shadow-glass">
           <CardContent className="flex items-center justify-between p-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rose-500">Admins</p>
-              <p className="mt-2 text-3xl font-black tracking-tight text-rose-500">{summary.admins}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-destructive">Admins</p>
+              <p className="mt-2 text-3xl font-black tracking-tight text-destructive">{summary.admins}</p>
             </div>
-            <Shield className="h-5 w-5 text-rose-500 opacity-70" />
+            <Shield className="h-5 w-5 text-destructive opacity-70" />
           </CardContent>
         </Card>
-        <Card className="border-white/[0.06] bg-white/[0.02] shadow-glass">
+        <Card className="border-border bg-secondary/50 shadow-glass">
           <CardContent className="flex items-center justify-between p-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Owners</p>
@@ -382,7 +337,7 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
             <BriefcaseBusiness className="h-5 w-5 text-primary opacity-70" />
           </CardContent>
         </Card>
-        <Card className="border-white/[0.06] bg-white/[0.02] shadow-glass">
+        <Card className="border-border bg-secondary/50 shadow-glass">
           <CardContent className="flex items-center justify-between p-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-success">Tenants</p>
@@ -391,7 +346,7 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
             <User className="h-5 w-5 text-success opacity-70" />
           </CardContent>
         </Card>
-        <Card className="border-white/[0.06] bg-white/[0.02] shadow-glass">
+        <Card className="border-border bg-secondary/50 shadow-glass">
           <CardContent className="flex items-center justify-between p-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-warning">Staff</p>
@@ -400,13 +355,13 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
             <UserCog className="h-5 w-5 text-warning opacity-70" />
           </CardContent>
         </Card>
-        <Card className="border-white/[0.06] bg-white/[0.02] shadow-glass">
+        <Card className="border-border bg-secondary/50 shadow-glass">
           <CardContent className="flex items-center justify-between p-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rose-600">Blocked</p>
-              <p className="mt-2 text-3xl font-black tracking-tight text-rose-600">{summary.blocked}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-destructive">Blocked</p>
+              <p className="mt-2 text-3xl font-black tracking-tight text-destructive">{summary.blocked}</p>
             </div>
-            <Ban className="h-5 w-5 text-rose-600 opacity-70" />
+            <Ban className="h-5 w-5 text-destructive opacity-70" />
           </CardContent>
         </Card>
       </section>
@@ -426,8 +381,8 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
         </section>
       )}
 
-      <Card className="overflow-hidden border-white/[0.06] bg-white/[0.02] shadow-glass">
-        <div className="border-b border-white/[0.04] bg-white/[0.01] p-4">
+      <Card className="overflow-hidden border-border bg-secondary/50 shadow-glass">
+        <div className="border-b border-border bg-secondary/50 p-4">
           <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto] lg:items-end">
             <div>
               <label htmlFor="admin-user-search" className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
@@ -453,7 +408,7 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
                 id="admin-role-filter"
                 value={roleFilter}
                 onChange={(event) => setRoleFilter(event.target.value as RoleFilter)}
-                className="h-11 w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 text-sm font-semibold text-foreground outline-none focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50 lg:w-40"
+                className="h-11 w-full rounded-lg border border-border bg-secondary/50 px-3 text-sm font-semibold text-foreground outline-none focus:border-destructive/50 focus:ring-1 focus:ring-destructive/50 lg:w-40"
               >
                 {roleFilters.map((role) => (
                   <option key={role} value={role} className="bg-background">
@@ -471,7 +426,7 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
                 id="admin-status-filter"
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-                className="h-11 w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 text-sm font-semibold text-foreground outline-none focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50 lg:w-44"
+                className="h-11 w-full rounded-lg border border-border bg-secondary/50 px-3 text-sm font-semibold text-foreground outline-none focus:border-destructive/50 focus:ring-1 focus:ring-destructive/50 lg:w-44"
               >
                 {statusFilters.map((status) => (
                   <option key={status} value={status} className="bg-background">
@@ -486,12 +441,12 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
         <CardContent className="p-0">
           {loading ? (
             <div className="flex h-56 items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-rose-500" />
+              <Loader2 className="h-8 w-8 animate-spin text-destructive" />
             </div>
           ) : filteredUsers.length ? (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[980px] border-collapse text-left text-sm">
-                <thead className="border-b border-white/[0.04] bg-white/[0.01]">
+                <thead className="border-b border-border bg-secondary/50">
                   <tr className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
                     <th className="px-4 py-3">Account</th>
                     <th className="px-4 py-3">Role</th>
@@ -500,47 +455,47 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/[0.04] bg-white/[0.01]">
+                <tbody className="divide-y divide-white/[0.04] bg-secondary/50">
                   {filteredUsers.map((user) => {
                     const linked = hasLinkedData(user);
                     const busy = updating === user.id;
                     const protectedAdmin = isProtectedAdmin(user, currentUserId);
                     const self = user.id === currentUserId;
                     return (
-                      <tr key={user.id} className="transition-colors hover:bg-white/[0.02]">
+                      <tr key={user.id} className="transition-colors hover:bg-secondary/50">
                         <td className="px-4 py-4 align-top">
                           <div className="flex items-start gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/[0.04] text-muted-foreground border border-white/[0.08]">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary/50 text-muted-foreground border border-border">
                               <UserCog className="h-5 w-5" />
                             </div>
                             <div>
                               <p className="font-bold tracking-tight text-foreground">{user.phone}</p>
                               <p className="mt-1 text-xs font-medium text-muted-foreground">{describeUser(user)}</p>
                               {user.isBlocked ? (
-                                <p className="mt-1 text-xs font-semibold text-rose-500">Blocked on {formatDate(user.blockedAt)}</p>
+                                <p className="mt-1 text-xs font-semibold text-destructive">Blocked on {formatDate(user.blockedAt)}</p>
                               ) : null}
                               <div className="mt-2 flex flex-wrap gap-1">
-                                {self ? <Badge variant="outline" className="border-rose-500/20 text-rose-400 bg-rose-500/5">You</Badge> : null}
-                                {protectedAdmin ? <Badge variant="destructive" className="bg-rose-500/25 border-rose-500/40 text-rose-200">Protected admin</Badge> : null}
+                                {self ? <Badge variant="outline" className="border-destructive/20 text-destructive bg-destructive/5">You</Badge> : null}
+                                {protectedAdmin ? <Badge variant="destructive" className="bg-destructive/25 border-destructive/40 text-destructive">Protected admin</Badge> : null}
                               </div>
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-4 align-top">
-                          <Badge variant={roleBadgeVariant(user.role, user.isBlocked)} className={`gap-1 ${user.isBlocked ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : ''}`}>
+                          <Badge variant={roleBadgeVariant(user.role, user.isBlocked)} className={`gap-1 ${user.isBlocked ? 'bg-destructive/10 text-destructive border-destructive/20' : ''}`}>
                             {user.role === "ADMIN" ? <ShieldCheck className="h-3 w-3" /> : null}
                             {user.isBlocked ? "BLOCKED" : user.role}
                           </Badge>
                         </td>
                         <td className="px-4 py-4 align-top">
                           <div className="flex flex-wrap gap-2">
-                            <Badge variant={user.ownerProfile?.propertyCount ? "default" : "outline"} className={user.ownerProfile?.propertyCount ? 'bg-primary/20 text-primary-strong border-primary/30' : 'border-white/[0.08]'}>
+                            <Badge variant={user.ownerProfile?.propertyCount ? "default" : "outline"} className={user.ownerProfile?.propertyCount ? 'bg-primary/20 text-primary-strong border-primary/30' : 'border-border'}>
                               {user.ownerProfile?.propertyCount ?? 0} properties
                             </Badge>
-                            <Badge variant={user.tenantRecordCount ? "success" : "outline"} className={user.tenantRecordCount ? 'bg-success-soft/20 text-success border-success/30' : 'border-white/[0.08]'}>
+                            <Badge variant={user.tenantRecordCount ? "success" : "outline"} className={user.tenantRecordCount ? 'bg-success-soft/20 text-success border-success/30' : 'border-border'}>
                               {user.tenantRecordCount} tenant records
                             </Badge>
-                            <Badge variant={user.staffAssignmentCount ? "warning" : "outline"} className={user.staffAssignmentCount ? 'bg-warning-soft/20 text-warning border-warning/30' : 'border-white/[0.08]'}>
+                            <Badge variant={user.staffAssignmentCount ? "warning" : "outline"} className={user.staffAssignmentCount ? 'bg-warning-soft/20 text-warning border-warning/30' : 'border-border'}>
                               {user.staffAssignmentCount} staff links
                             </Badge>
                           </div>
@@ -561,7 +516,7 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
                                 }
                                 title={protectedAdmin ? "Other admin accounts are protected" : undefined}
                                 onClick={() => handleRoleChange(user, roleOption)}
-                                className={`border-white/[0.06] hover:bg-white/[0.04] text-xs h-8 ${user.role === roleOption ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : ''}`}
+                                className={`border-border hover:bg-secondary/50 text-xs h-8 ${user.role === roleOption ? 'bg-destructive/10 text-destructive border-destructive/20' : ''}`}
                               >
                                 {roleOption}
                               </Button>
@@ -589,7 +544,7 @@ function AdminDashboardContent({ currentUserId }: { currentUserId?: string }) {
                                     ? "Block users with linked property, tenant, or staff data instead"
                                     : "Delete empty account"
                               }
-                              className="gap-1 text-xs h-8 border-rose-500/30 text-rose-400 hover:bg-rose-500/10 hover:text-rose-400"
+                              className="gap-1 text-xs h-8 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
                             >
                               <Trash2 className="h-3 w-3" />
                               Delete

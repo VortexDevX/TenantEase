@@ -1,63 +1,60 @@
 "use client";
 
 import { useState } from "react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { fetchApi } from "@/lib/api-client";
 
 export function EnquiryForm({ slug }: { slug: string }) {
-  const [form, setForm] = useState({ name: "", phone: "", email: "", message: "" });
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function submit(event: React.FormEvent) {
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const target = event.currentTarget;
+    const form = new FormData(target);
     setLoading(true);
-    setStatus("");
+    setStatus(null);
     try {
-      const res = await fetch(`${API_URL}/listings/${slug}/enquiry`, {
+      await fetchApi(`/listings/${encodeURIComponent(slug)}/enquiry`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...form,
-          phone: form.phone.replace(/\D/g, ""),
-          email: form.email || null,
-          message: form.message || null
-        })
+          name: String(form.get("name") ?? "").trim(),
+          phone: form.get("phone"),
+          email: form.get("email") || null,
+          message: String(form.get("message") ?? "").trim() || null,
+        }),
       });
-      const json = await res.json();
-      if (!res.ok || json.success === false) {
-        setStatus(json.error?.message ?? "Could not send enquiry.");
-        return;
-      }
-      setForm({ name: "", phone: "", email: "", message: "" });
-      setStatus("Enquiry sent. The property owner will contact you.");
-    } catch {
-      setStatus("Network error. Try again.");
+      target.reset();
+      setStatus({ success: true, message: "Enquiry sent. The property owner will contact you." });
+    } catch (error) {
+      setStatus({ success: false, message: error instanceof Error ? error.message : "Could not send enquiry" });
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <form onSubmit={submit} className="rounded-xl border border-border bg-card p-5 shadow-soft">
-      <h2 className="text-lg font-bold text-foreground">Ask About Vacancy</h2>
-      <div className="mt-4 grid gap-3">
-        <Input required placeholder="Full name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-        <Input required inputMode="numeric" maxLength={10} placeholder="10-digit phone" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value.replace(/\D/g, "").slice(0, 10) })} />
-        <Input type="email" placeholder="Email optional" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-        <textarea
-          rows={3}
-          placeholder="Message optional"
-          value={form.message}
-          onChange={(event) => setForm({ ...form, message: event.target.value })}
-          className="flex w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-        />
+    <form onSubmit={submit} className="dashboard-panel listing-enquiry">
+      <h2 className="mb-4 text-xl font-bold tracking-tight">Ask about vacancy</h2>
+      <div className="grid gap-3">
+        <label className="grid gap-1.5 text-sm font-semibold">Full name
+          <Input name="name" autoComplete="name" minLength={2} maxLength={100} required />
+        </label>
+        <label className="grid gap-1.5 text-sm font-semibold">Mobile number
+          <Input name="phone" type="tel" inputMode="numeric" autoComplete="tel-national" required pattern="[0-9]{10}" maxLength={10} placeholder="10-digit number" />
+        </label>
+        <label className="grid gap-1.5 text-sm font-semibold">Email (optional)
+          <Input name="email" type="email" autoComplete="email" />
+        </label>
+        <label className="grid gap-1.5 text-sm font-semibold">Message (optional)
+          <textarea name="message" rows={3} maxLength={1000} className="rounded-lg border border-input px-3 py-2 text-base sm:text-sm" />
+        </label>
       </div>
-      {status ? <p className="mt-3 text-sm font-semibold text-muted-foreground">{status}</p> : null}
-      <Button type="submit" disabled={loading} className="mt-4 w-full">
-        {loading ? "Sending..." : "Send Enquiry"}
+      {status && <p role={status.success ? "status" : "alert"} className={`mt-3 text-sm ${status.success ? "text-success" : "text-destructive"}`}>{status.message}</p>}
+      <Button type="submit" disabled={loading} className="mt-4 w-full justify-between">
+        {loading ? "Sending…" : "Send enquiry"}<ArrowRight size={17} aria-hidden="true" />
       </Button>
     </form>
   );

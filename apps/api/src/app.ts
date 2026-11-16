@@ -162,6 +162,13 @@ export function createApp() {
       });
     }
 
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "P2034") {
+      return reply.status(409).send({
+        success: false,
+        error: { code: "VALIDATION_ERROR", message: "This record changed during your request. Refresh and try again." }
+      });
+    }
+
     if (typeof error === "object" && error !== null && "statusCode" in error) {
       const statusCode = Number(error.statusCode);
       if (Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 500) {

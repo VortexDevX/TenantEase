@@ -13,10 +13,17 @@ import { formatPaisa } from "@/lib/format";
 import { Loader2, FileText, Plus, Download } from "lucide-react";
 import type { TenantDto } from "@tenantease/types";
 import { fetchApi, openApiBlob } from "@/lib/api-client";
+import { PageHeader } from "@/components/shared/PageHeader";
 
 export default function AgreementsPage() {
   const { authorized } = useRequireRoles(["OWNER", "STAFF"]);
-  const { activeProperty } = useProperty();
+  if (!authorized) return null;
+
+  return <DashboardLayout activePath="/agreements"><AgreementsPageContent /></DashboardLayout>;
+}
+
+function AgreementsPageContent() {
+  const { activeProperty, staffRole } = useProperty();
 
   const [selectedTenant, setSelectedTenant] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -71,232 +78,220 @@ export default function AgreementsPage() {
     await openApiBlob(`/agreements/${agreementId}/download`, `agreement-${agreementId}.pdf`);
   };
 
-  if (!authorized) return null;
-
   const fmt = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
   return (
-    <DashboardLayout activePath="/agreements">
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Rental Agreements
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Generate and manage rental agreements for tenants.
-            </p>
-          </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <PageHeader title="Rental agreements" description="Review and download tenant agreements."
+        actions={staffRole === undefined || staffRole === "MANAGER" ? (
           <Button onClick={() => setShowForm(!showForm)} className="gap-2">
-            <Plus className="w-4 h-4" />
-            Generate Agreement
+            <Plus size={17} aria-hidden="true" /> Generate agreement
           </Button>
-        </div>
+        ) : undefined} />
 
-        {/* Tenant Selector */}
+      {/* Tenant Selector */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="agreement-tenant" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Select Tenant
+            </label>
+            <select
+              id="agreement-tenant"
+              value={selectedTenant}
+              onChange={(e) => setSelectedTenant(e.target.value)}
+              className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+            >
+              <option value="">-- Select a tenant --</option>
+              {tenantsLoading ? (
+                <option disabled>Loading...</option>
+              ) : (
+                tenants?.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.fullName} — Room ID: {t.roomId.substring(0, 8)}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Generation Form */}
+      {showForm && (
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="agreement-tenant" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Select Tenant
-              </label>
-              <select
-                id="agreement-tenant"
-                value={selectedTenant}
-                onChange={(e) => setSelectedTenant(e.target.value)}
-                className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
-              >
-                <option value="">-- Select a tenant --</option>
-                {tenantsLoading ? (
-                  <option disabled>Loading...</option>
-                ) : (
-                  tenants?.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.fullName} — Room ID: {t.roomId.substring(0, 8)}
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Generation Form */}
-        {showForm && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <FileText className="w-4 h-4" />
-                New Agreement
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="agreement-template" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Template
-                  </label>
-                  <select
-                    id="agreement-template"
-                    value={templateType}
-                    onChange={(e) => setTemplateType(e.target.value)}
-                    className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
-                  >
-                    <option value="pg">PG Accommodation</option>
-                    <option value="standard">Standard Rental</option>
-                    <option value="hostel">Hostel</option>
-                  </select>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="agreement-state" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">State</label>
-                  <Input
-                    id="agreement-state"
-                    placeholder="e.g. Karnataka"
-                    value={stateName}
-                    onChange={(e) => setStateName(e.target.value)}
-                    className="h-10"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="agreement-start" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Start Date</label>
-                  <Input
-                    id="agreement-start"
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="h-10"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="agreement-end" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">End Date</label>
-                  <Input
-                    id="agreement-end"
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="h-10"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="agreement-duration" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Duration</label>
-                  <Input
-                    id="agreement-duration"
-                    placeholder="e.g. 11 months"
-                    value={duration}
-                    onChange={(e) => setDuration(e.target.value)}
-                    className="h-10"
-                  />
-                </div>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              New Agreement
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="agreement-template" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Template
+                </label>
+                <select
+                  id="agreement-template"
+                  value={templateType}
+                  onChange={(e) => setTemplateType(e.target.value)}
+                  className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                >
+                  <option value="pg">PG Accommodation</option>
+                  <option value="standard">Standard Rental</option>
+                  <option value="hostel">Hostel</option>
+                </select>
               </div>
 
-              <div className="mt-4 flex flex-col gap-1.5">
-                <label htmlFor="agreement-clauses" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Custom Clauses (one per line)
-                </label>
-                <textarea
-                  id="agreement-clauses"
-                  rows={4}
-                  value={customClauses}
-                  onChange={(e) => setCustomClauses(e.target.value)}
-                  placeholder={"No guests after 10 PM\nNo cooking in room\n1 month notice period"}
-                  className="rounded-lg border border-border bg-background px-3 py-2 text-sm resize-none"
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="agreement-state" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">State</label>
+                <Input
+                  id="agreement-state"
+                  placeholder="e.g. Karnataka"
+                  value={stateName}
+                  onChange={(e) => setStateName(e.target.value)}
+                  className="h-10"
                 />
               </div>
 
-              <div className="flex justify-end pt-4">
-                <Button onClick={handleGenerate} disabled={submitting || !selectedTenant || !startDate} className="gap-2">
-                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                  Generate PDF
-                </Button>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="agreement-start" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Start Date</label>
+                <Input
+                  id="agreement-start"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-10"
+                />
               </div>
-            </CardContent>
-          </Card>
-        )}
 
-        {/* Result */}
-        {result && (
-          <Card className={result.error ? "border-destructive" : "border-green-500"}>
-            <CardContent className="pt-5 pb-4">
-              {result.error ? (
-                <p className="text-destructive text-sm">❌ {result.error}</p>
-              ) : (
-                <p className="text-green-600 text-sm font-semibold">
-                  ✅ Agreement generated! Status: {result.status}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        )}
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="agreement-end" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">End Date</label>
+                <Input
+                  id="agreement-end"
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="h-10"
+                />
+              </div>
 
-        {/* Agreement List */}
-        {selectedTenant && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Agreements History</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {agreementsLoading ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : !agreements || agreements.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">
-                  No agreements generated yet for this tenant.
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
-                        <th className="text-left py-2 pr-4">Template</th>
-                        <th className="text-left py-2 px-4">Period</th>
-                        <th className="text-left py-2 px-4">Status</th>
-                        <th className="text-left py-2 px-4">Created</th>
-                        <th className="text-right py-2 pl-4">Action</th>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="agreement-duration" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Duration</label>
+                <Input
+                  id="agreement-duration"
+                  placeholder="e.g. 11 months"
+                  value={duration}
+                  onChange={(e) => setDuration(e.target.value)}
+                  className="h-10"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-1.5">
+              <label htmlFor="agreement-clauses" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Custom Clauses (one per line)
+              </label>
+              <textarea
+                id="agreement-clauses"
+                rows={4}
+                value={customClauses}
+                onChange={(e) => setCustomClauses(e.target.value)}
+                placeholder={"No guests after 10 PM\nNo cooking in room\n1 month notice period"}
+                className="rounded-lg border border-border bg-background px-3 py-2 text-sm resize-none"
+              />
+            </div>
+
+            <div className="flex justify-end pt-4">
+              <Button onClick={handleGenerate} disabled={submitting || !selectedTenant || !startDate} className="gap-2">
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                Generate PDF
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Result */}
+      {result && (
+        <Card className={result.error ? "border-destructive" : "border-success"}>
+          <CardContent className="pt-5 pb-4">
+            {result.error ? (
+              <p className="text-destructive text-sm">❌ {result.error}</p>
+            ) : (
+              <p className="text-success text-sm font-semibold">
+                ✅ Agreement generated! Status: {result.status}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Agreement List */}
+      {selectedTenant && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Agreements History</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {agreementsLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : !agreements || agreements.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">
+                No agreements generated yet for this tenant.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground">
+                      <th className="text-left py-2 pr-4">Template</th>
+                      <th className="text-left py-2 px-4">Period</th>
+                      <th className="text-left py-2 px-4">Status</th>
+                      <th className="text-left py-2 px-4">Created</th>
+                      <th className="text-right py-2 pl-4">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {agreements.map((a: any) => (
+                      <tr key={a.id} className="border-b border-border/40">
+                        <td className="py-2.5 pr-4 font-medium capitalize">{a.templateType}</td>
+                        <td className="py-2.5 px-4 text-muted-foreground">
+                          {a.startDate ? fmt.format(new Date(a.startDate)) : "—"}
+                          {a.endDate ? ` → ${fmt.format(new Date(a.endDate))}` : ""}
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <Badge variant={a.status === "draft" ? "secondary" : "default"}>
+                            {a.status}
+                          </Badge>
+                        </td>
+                        <td className="py-2.5 px-4 text-muted-foreground">
+                          {fmt.format(new Date(a.createdAt))}
+                        </td>
+                        <td className="py-2.5 pl-4 text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDownload(a.id)}
+                            className="gap-1"
+                          >
+                            <Download className="w-3 h-3" />
+                            PDF
+                          </Button>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {agreements.map((a: any) => (
-                        <tr key={a.id} className="border-b border-border/40">
-                          <td className="py-2.5 pr-4 font-medium capitalize">{a.templateType}</td>
-                          <td className="py-2.5 px-4 text-muted-foreground">
-                            {a.startDate ? fmt.format(new Date(a.startDate)) : "—"}
-                            {a.endDate ? ` → ${fmt.format(new Date(a.endDate))}` : ""}
-                          </td>
-                          <td className="py-2.5 px-4">
-                            <Badge variant={a.status === "draft" ? "secondary" : "default"}>
-                              {a.status}
-                            </Badge>
-                          </td>
-                          <td className="py-2.5 px-4 text-muted-foreground">
-                            {fmt.format(new Date(a.createdAt))}
-                          </td>
-                          <td className="py-2.5 pl-4 text-right">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDownload(a.id)}
-                              className="gap-1"
-                            >
-                              <Download className="w-3 h-3" />
-                              PDF
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    </DashboardLayout>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }

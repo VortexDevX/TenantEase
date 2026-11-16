@@ -33,7 +33,8 @@ export default function RoomsPage() {
 }
 
 function RoomsContent() {
-  const { activeProperty, loading: propertyLoading } = useProperty();
+  const { activeProperty, staffRole, refetch: refetchProperty, loading: propertyLoading } = useProperty();
+  const canEdit = staffRole !== "ACCOUNTANT";
   const [showModal, setShowModal] = useState(false);
   const [editingRoom, setEditingRoom] = useState<RoomDto | null>(null);
   const [search, setSearch] = useState("");
@@ -104,6 +105,7 @@ function RoomsContent() {
     try {
       await fetchApi(`/rooms/${room.id}`, { method: "DELETE" });
       refetch();
+      refetchProperty();
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Failed to delete room.");
     }
@@ -119,6 +121,7 @@ function RoomsContent() {
            onSuccess={() => {
              closeModal();
              refetch();
+             refetchProperty();
            }}
         />
       )}
@@ -129,10 +132,11 @@ function RoomsContent() {
           title="Rooms Inventory"
           description="Manage room availability, capacities, and base pricing."
           actions={
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <div className="relative w-full sm:w-[250px]">
+            <div className="flex w-full flex-wrap items-center gap-2">
+              <div className="relative w-full sm:w-[15rem]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
+                  aria-label="Search rooms"
                   placeholder="Search room, type, or status..."
                   className="pl-9 bg-card"
                   value={search}
@@ -141,21 +145,27 @@ function RoomsContent() {
               </div>
               <div className="flex bg-secondary/50 rounded-xl p-1 shadow-soft h-10">
                 <button
+                  type="button"
+                  aria-label="List view"
+                  aria-pressed={viewMode === "list"}
                   onClick={() => setViewMode("list")}
                   className={`flex items-center gap-2 px-3 rounded-lg text-sm font-semibold transition-colors ${viewMode === "list" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                 >
                   <List className="w-4 h-4" />
                 </button>
                 <button
+                  type="button"
+                  aria-label="Floor view"
+                  aria-pressed={viewMode === "grid"}
                   onClick={() => setViewMode("grid")}
                   className={`flex items-center gap-2 px-3 rounded-lg text-sm font-semibold transition-colors ${viewMode === "grid" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                 >
                   <Grid className="w-4 h-4" />
                 </button>
               </div>
-              <Button onClick={openCreateModal} disabled={!activeProperty} className="rounded-xl shadow-soft shrink-0 h-10">
-                <Plus className="w-4 h-4 sm:mr-2" /> <span className="hidden sm:inline">Add Room</span>
-              </Button>
+              {canEdit && <Button onClick={openCreateModal} disabled={!activeProperty}>
+                <Plus size={17} aria-hidden="true" /> Add room
+              </Button>}
             </div>
           }
         />
@@ -212,25 +222,27 @@ function RoomsContent() {
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-1">
-                                <Button
+                                {canEdit && <Button
                                   variant="ghost"
                                   size="sm"
+                                  aria-label={`Edit room ${room.roomNumber}`}
                                   onClick={() => openEditModal(room)}
                                   className="text-primary hover:text-primary-strong"
                                 >
                                   <Pencil className="w-4 h-4 sm:mr-2" />
                                   <span className="hidden sm:inline">Edit</span>
-                                </Button>
-                                <Button
+                                </Button>}
+                                {canEdit && <Button
                                   variant="ghost"
                                   size="sm"
+                                  aria-label={`Delete room ${room.roomNumber}`}
                                   onClick={() => deleteRoom(room)}
                                   disabled={room.occupiedBeds > 0}
                                   className="text-destructive hover:text-destructive"
                                 >
                                   <Trash2 className="w-4 h-4 sm:mr-2" />
                                   <span className="hidden sm:inline">Delete</span>
-                                </Button>
+                                </Button>}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -238,15 +250,15 @@ function RoomsContent() {
                       </TableBody>
                     </Table>
                   ) : (
-                     <div className="flex flex-col gap-8 p-6 bg-white/[0.01]">
+                     <div className="flex flex-col gap-8 p-6 bg-secondary/50">
                        {Object.entries(roomsByFloor).map(([floor, fr]) => (
                          <div key={floor} className="flex flex-col gap-3">
-                           <h3 className="font-bold text-foreground tracking-tight border-b border-white/[0.04] pb-2 flex items-center gap-2">
-                             <div className="w-6 h-6 rounded-md bg-white/[0.04] flex items-center justify-center text-sm font-black border border-white/[0.08] text-muted-foreground">
+                           <h3 className="font-bold text-foreground tracking-tight border-b border-border pb-2 flex items-center gap-2">
+                             <div className="w-6 h-6 rounded-md bg-secondary/50 flex items-center justify-center text-sm font-black border border-border text-muted-foreground">
                                {Number(floor) === 0 ? 'G' : floor}
                              </div>
                              Floor {Number(floor) === 0 ? 'Ground' : floor}
-                             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-white/[0.02] border border-white/[0.06] text-muted-foreground ml-auto">
+                             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-secondary/50 border border-border text-muted-foreground ml-auto">
                                {fr.length} Rooms
                              </span>
                            </h3>
@@ -258,9 +270,9 @@ function RoomsContent() {
                                 return (
                                  <div
                                    key={room.id}
-                                   className={`flex flex-col p-3.5 rounded-xl border backdrop-blur-md transition-all duration-300
+                                   className={`flex flex-col p-3.5 rounded-xl border transition-all duration-300
                                      ${isVacant ? 'bg-success-soft/10 border-success/20 hover:border-success/40 hover:bg-success-soft/15 shadow-glass-success' : ''}
-                                     ${isOccupied ? 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.1]' : ''}
+                                     ${isOccupied ? 'bg-secondary/50 border-border hover:bg-secondary/50 hover:border-border' : ''}
                                      ${(!isVacant && !isOccupied) ? 'bg-warning-soft/10 border-warning/20 hover:border-warning/40 hover:bg-warning-soft/15 shadow-glass-warning' : ''}
                                    `}
                                  >
@@ -284,15 +296,15 @@ function RoomsContent() {
                                         <Users size={14} className="opacity-70" />
                                         {room.occupiedBeds} / {room.bedCount}
                                       </div>
-                                      <Button
+                                      {canEdit && <Button
                                         variant="ghost"
                                         size="sm"
                                         onClick={() => openEditModal(room)}
-                                        className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+                                        className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-secondary/50"
                                         aria-label={`Edit room ${room.roomNumber}`}
                                       >
                                         <Pencil className="w-4 h-4" />
-                                      </Button>
+                                      </Button>}
                                    </div>
                                  </div>
                                 );
@@ -307,11 +319,11 @@ function RoomsContent() {
                   title="No Rooms In Inventory"
                   description="You have not added any rooms to this property."
                   icon={<BedDouble />}
-                  action={
+                  action={canEdit && (
                     <Button variant="outline" onClick={openCreateModal}>
                       <Plus className="w-4 h-4 mr-2" /> Quick Add Room
                     </Button>
-                  }
+                  )}
                   className="py-16"
                 />
               )}

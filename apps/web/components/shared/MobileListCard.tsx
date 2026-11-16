@@ -14,7 +14,7 @@ export function MobileListCard({ title, meta, value, status, children, className
   return (
     <div
       className={cn(
-        "rounded-lg border border-white/[0.06] bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]",
+        "rounded-lg border border-border bg-secondary/50 p-4 transition-colors hover:bg-secondary/50",
         className
       )}
     >
@@ -28,7 +28,7 @@ export function MobileListCard({ title, meta, value, status, children, className
           {status}
         </div>
       </div>
-      {children ? <div className="mt-3 border-t border-white/[0.04] pt-3">{children}</div> : null}
+      {children ? <div className="mt-3 border-t border-border pt-3">{children}</div> : null}
     </div>
   );
 }

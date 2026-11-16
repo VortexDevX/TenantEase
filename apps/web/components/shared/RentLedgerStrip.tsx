@@ -17,9 +17,9 @@ interface RentLedgerStripProps {
 }
 
 const colorMap: Record<string, string> = {
-  success:     "text-emerald-400",
-  warning:     "text-amber-400",
-  destructive: "text-red-400",
+  success:     "text-success",
+  warning:     "text-warning",
+  destructive: "text-destructive",
   info:        "text-primary-strong",
   default:     "text-foreground",
 };
@@ -36,7 +36,7 @@ export function RentLedgerStrip({ monthLabel, items, className }: RentLedgerStri
           return (
             <div
               key={item.id}
-              className="flex flex-col gap-1 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3"
+              className="flex flex-col gap-1 rounded-lg border border-border bg-secondary/50 p-3"
             >
               <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {item.label}

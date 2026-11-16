@@ -12,7 +12,9 @@ if (process.env.NODE_ENV === "test") {
     const database = testUrl.pathname.replace(/^\//, "");
     testUrl.pathname = `/${database.endsWith("_test") ? database : `${database}_test`}`;
   }
-  if (!/test/i.test(testUrl.pathname)) throw new Error("Tests refuse to use a database without 'test' in its name");
+  if (!decodeURIComponent(testUrl.pathname).endsWith("_test")) {
+    throw new Error("Tests require a dedicated database with a name ending in '_test'");
+  }
   process.env.DATABASE_URL = testUrl.toString();
 }
 

@@ -39,4 +39,16 @@ test("owner can register, complete profile, and create first property", async ({
   await page.getByRole("button", { name: /^save$/i }).click();
 
   await expect(page.getByRole("heading", { name: `E2E Property ${phone.slice(-4)}` })).toBeVisible();
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.getByRole("button", { name: "More", exact: true }).click();
+  const menu = page.getByRole("dialog", { name: "Navigation" });
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(page.getByRole("button", { name: "More", exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "More", exact: true }).click();
+  await menu.getByRole("link", { name: "Rooms", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Rooms Inventory" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
 });

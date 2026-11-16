@@ -13,6 +13,10 @@ const resolveClaimSchema = z.discriminatedUnion("decision", [
   z.object({ decision: z.literal("REJECT"), reason: z.string().trim().min(3).max(255) })
 ]);
 
+function assertClaimPending(count: number) {
+  if (count !== 1) throw new AppError(409, "VALIDATION_ERROR", "Payment claim is already resolved");
+}
+
 export async function notificationRoutes(app: FastifyInstance) {
   app.get("/notifications", { preHandler: [app.authenticateAny] }, async (request) => {
     const notifications = await prisma.notification.findMany({
@@ -71,16 +75,21 @@ export async function notificationRoutes(app: FastifyInstance) {
     if (target.status !== "PENDING") throw new AppError(409, "VALIDATION_ERROR", "Payment claim is already resolved");
 
     if (body.decision === "REJECT") {
-      const rejected = await prisma.offlinePaymentClaim.update({
-        where: { id },
+      const rejected = await prisma.offlinePaymentClaim.updateMany({
+        where: { id, status: "PENDING" },
         data: { status: "REJECTED", rejectionReason: body.reason, reviewedAt: new Date(), reviewedByUserId: request.user.sub }
       });
-      return ok({ id: rejected.id, status: rejected.status });
+      assertClaimPending(rejected.count);
+      return ok({ id, status: "REJECTED" });
     }
 
     const payment = await prisma.$transaction(async (tx) => {
-      const claim = await tx.offlinePaymentClaim.findUnique({ where: { id } });
-      if (!claim || claim.status !== "PENDING") throw new AppError(409, "VALIDATION_ERROR", "Payment claim is already resolved");
+      const approved = await tx.offlinePaymentClaim.updateMany({
+        where: { id, status: "PENDING" },
+        data: { status: "APPROVED", reviewedAt: new Date(), reviewedByUserId: request.user.sub }
+      });
+      assertClaimPending(approved.count);
+      const claim = await tx.offlinePaymentClaim.findUniqueOrThrow({ where: { id } });
       const rentEntry = await tx.rentEntry.findUnique({ where: { id: claim.rentEntryId } });
       if (!rentEntry) throw new AppError(404, "RENT_ENTRY_NOT_FOUND", "Rent entry not found");
       const paid = await tx.payment.aggregate({ where: { rentEntryId: rentEntry.id, isVoided: false }, _sum: { amount: true } });
@@ -99,12 +108,8 @@ export async function notificationRoutes(app: FastifyInstance) {
         }
       });
       await recalculateRentEntry(rentEntry.id, tx);
-      await tx.offlinePaymentClaim.update({
-        where: { id },
-        data: { status: "APPROVED", reviewedAt: new Date(), reviewedByUserId: request.user.sub }
-      });
       return created;
-    });
+    }, { isolationLevel: "Serializable" });
 
     try {
       await generateReceipt(payment.id, ownerProfileId);

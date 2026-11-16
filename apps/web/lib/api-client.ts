@@ -31,8 +31,8 @@ function createApiBaseUrl(value: string) {
   return url;
 }
 
-function apiUrl(path: string) {
-  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\0")) {
+export function apiUrl(path: string) {
+  if (!path.startsWith("/") || path.startsWith("//") || /[\\\u0000-\u001f]/.test(path)) {
     throw new ApiError(400, "INVALID_API_PATH", "API path must be a relative path");
   }
   return new URL(path, API_BASE_URL);
@@ -71,6 +71,7 @@ async function performRefresh(): Promise<string | null> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
+    signal: AbortSignal.timeout(10_000),
     body: JSON.stringify({})
   });
   const json = await res.json().catch(() => null);
@@ -101,27 +102,22 @@ function handleInvalidSession(path: string, status: number, code: string) {
 }
 
 function requestSignal(options: RequestInit) {
-  const controller = options.signal ? null : new AbortController();
-  const timeout = controller ? globalThis.setTimeout(() => controller.abort(), 10000) : null;
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 10_000);
 
   return {
-    signal: options.signal ?? controller?.signal,
-    cleanup: () => {
-      if (timeout) {
-        globalThis.clearTimeout(timeout);
-      }
-    }
+    signal: options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal,
+    cleanup: () => globalThis.clearTimeout(timeout)
   };
 }
 
 function requestHeaders(options: RequestInit, includeJsonContentType: boolean) {
   const token = getAuthToken();
+  const headers = new Headers(options.headers);
 
-  return {
-    ...(includeJsonContentType ? { "Content-Type": "application/json" } : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(options.headers as Record<string, string> | undefined)
-  };
+  if (includeJsonContentType && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  return headers;
 }
 
 async function retryAfterRefresh<T>(
@@ -167,25 +163,25 @@ async function fetchApiInternal<T>(
   try {
     const res = await fetch(apiUrl(path), {
       ...options,
-      headers: requestHeaders(options, !isFormData),
+      headers: requestHeaders(options, options.body != null && !isFormData),
       credentials: "include",
       signal
     });
 
-    const json = await res.json();
+    const json = await res.json().catch(() => null);
 
-    if (res.ok && json.success !== false) {
+    if (res.ok && json?.success === true) {
       return (json as ApiSuccess<T>).data;
     }
 
-    const code = json.error?.code ?? "UNKNOWN";
+    const code = json?.error?.code ?? "UNKNOWN";
     const retryResult = await retryAfterRefresh(path, res.status, code, hasRetried, () =>
       fetchApiInternal<T>(path, options, true)
     );
     if (retryResult !== null) return retryResult;
 
     handleInvalidSession(path, res.status, code);
-    return throwApiError(res.status, code, json.error?.message, json.error?.details);
+    return throwApiError(res.status, code, json?.error?.message, json?.error?.details);
   } catch (error) {
     return rethrowNetworkError(error);
   } finally {

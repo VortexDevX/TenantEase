@@ -159,6 +159,10 @@ export type PaymentDto = {
   isVoided: boolean;
 };
 
+export type RecentPaymentDto = Pick<PaymentDto, "id" | "amount" | "mode" | "paidAt"> & {
+  tenantName: string;
+};
+
 export type ReceiptDto = {
   id: string;
   paymentId: string;

@@ -6,22 +6,24 @@ import { TableCell, TableRow } from "@/components/ui/table";
 
 interface TenantRentRowProps {
   tenantName: string;
-  roomName: string;
+  billingMonth: string;
   amount: number;
+  outstanding: number;
   status: StatusBadgeType;
   dueDate: Date;
   actions?: React.ReactNode;
   className?: string;
 }
 
-export function TenantRentRow({ tenantName, roomName, amount, status, dueDate, actions, className }: TenantRentRowProps) {
+export function TenantRentRow({ tenantName, billingMonth, amount, outstanding, status, dueDate, actions, className }: TenantRentRowProps) {
   return (
-    <TableRow className={cn("hover:bg-white/[0.03]", className)}>
+    <TableRow className={cn("hover:bg-secondary/50", className)}>
       <TableCell className="font-semibold text-foreground">{tenantName}</TableCell>
-      <TableCell className="text-muted-foreground">{roomName}</TableCell>
+      <TableCell className="text-muted-foreground">{billingMonth}</TableCell>
       <TableCell className="text-right">
         <MoneyValue amount={amount} />
       </TableCell>
+      <TableCell className="text-right"><MoneyValue amount={outstanding} /></TableCell>
       <TableCell>
         <StatusBadge status={status} />
       </TableCell>

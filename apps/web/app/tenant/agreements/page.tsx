@@ -36,12 +36,12 @@ export default function TenantAgreementsPage() {
 
         {loading ? (
           <div className="flex justify-center py-16">
-            <Loader2 className="w-8 h-8 animate-spin text-violet-400" />
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
         ) : !agreements || agreements.length === 0 ? (
-          <Card className="border-white/[0.06] bg-white/[0.02] shadow-glass">
+          <Card className="border-border bg-secondary/50 shadow-glass">
             <CardContent className="py-12 text-center">
-              <ScrollText className="w-10 h-10 text-violet-400/80 mx-auto mb-3" />
+              <ScrollText className="w-10 h-10 text-primary/80 mx-auto mb-3" />
               <p className="text-muted-foreground text-sm font-semibold">
                 No rental agreements found. Your property owner will generate one for you.
               </p>
@@ -50,7 +50,7 @@ export default function TenantAgreementsPage() {
         ) : (
           <div className="space-y-4">
             {agreements.map((a: any) => (
-              <Card key={a.id} className="border-white/[0.06] bg-white/[0.02] shadow-glass">
+              <Card key={a.id} className="border-border bg-secondary/50 shadow-glass">
                 <CardContent className="pt-5 pb-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="space-y-1">
@@ -58,7 +58,7 @@ export default function TenantAgreementsPage() {
                         <span className="font-bold capitalize text-foreground">
                           {a.templateType} Agreement
                         </span>
-                        <Badge variant={a.status === "draft" ? "secondary" : "default"} className={a.status !== "draft" ? "bg-violet-500/10 text-violet-400 border border-violet-500/20" : ""}>
+                        <Badge variant={a.status === "draft" ? "secondary" : "default"} className={a.status !== "draft" ? "bg-primary/10 text-primary border border-primary/20" : ""}>
                           {a.status}
                         </Badge>
                       </div>
@@ -75,7 +75,7 @@ export default function TenantAgreementsPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => handleDownload(a.id)}
-                      className="gap-1 border-white/[0.08] hover:bg-white/[0.04] text-violet-400 hover:text-violet-300"
+                      className="gap-1 border-border hover:bg-secondary/50 text-primary hover:text-primary"
                     >
                       <Download className="w-3 h-3" />
                       Download PDF

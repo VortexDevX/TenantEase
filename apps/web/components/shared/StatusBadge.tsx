@@ -22,19 +22,19 @@ interface StatusBadgeProps {
 }
 
 const dotColor: Record<string, string> = {
-  success: "bg-emerald-400 shadow-[0_0_6px_hsl(160_84%_39%/0.6)]",
-  warning: "bg-amber-400 shadow-[0_0_6px_hsl(38_92%_50%/0.6)]",
-  destructive: "bg-red-400 shadow-[0_0_6px_hsl(0_72%_51%/0.6)]",
+  success: "bg-success shadow-[0_0_6px_hsl(160_84%_39%/0.6)]",
+  warning: "bg-warning shadow-[0_0_6px_hsl(38_92%_50%/0.6)]",
+  destructive: "bg-destructive shadow-[0_0_6px_hsl(0_72%_51%/0.6)]",
   info: "bg-primary-strong shadow-glow",
-  secondary: "bg-slate-400",
+  secondary: "bg-muted-foreground",
 };
 
 const pillColor: Record<string, string> = {
-  success: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  warning: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  destructive: "bg-red-500/10 text-red-400 border-red-500/20",
+  success: "bg-success/10 text-success border-success/20",
+  warning: "bg-warning/10 text-warning border-warning/20",
+  destructive: "bg-destructive/10 text-destructive border-destructive/20",
   info: "bg-primary/10 text-primary-strong border-primary/20",
-  secondary: "bg-white/[0.04] text-slate-400 border-white/[0.06]",
+  secondary: "bg-secondary/50 text-muted-foreground border-border",
 };
 
 function normalise(input: string): string {

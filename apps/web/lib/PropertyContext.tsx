@@ -1,94 +1,55 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import type { PropertyDto } from "@tenantease/types";
-import { fetchApi } from "./api-client";
+import { createContext, useContext, useState } from "react";
+import type { PropertyDto, StaffRole } from "@tenantease/types";
+import { useAuth } from "@/contexts/AuthContext";
+import { useApi } from "./useApi";
 
 interface PropertyContextValue {
   properties: PropertyDto[];
   activeProperty: PropertyDto | null;
+  staffRole: StaffRole | undefined;
   setActivePropertyId: (id: string) => void;
   loading: boolean;
   error: string | null;
   refetch: () => void;
 }
 
-const PropertyContext = createContext<PropertyContextValue>({
-  properties: [],
-  activeProperty: null,
-  setActivePropertyId: () => {},
-  loading: true,
-  error: null,
-  refetch: () => {},
-});
+const PropertyContext = createContext<PropertyContextValue | null>(null);
 
 export function PropertyProvider({ children }: { children: React.ReactNode }) {
-  const [properties, setProperties] = useState<PropertyDto[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
+  const accountId = user?.role === "STAFF" || (user?.role === "OWNER" && user.displayName) ? user.id : null;
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchApi<PropertyDto[]>("/properties");
-      setProperties(data);
-      if (data.length === 0) {
-        setActiveId(null);
-        return;
-      }
+  return <AccountProperties key={accountId} accountId={accountId}>{children}</AccountProperties>;
+}
 
-      const storedId = typeof window !== "undefined" ? window.localStorage.getItem("te_active_property_id") : null;
-      const preferredId = activeId ?? storedId;
-      const hasPreferred = preferredId ? data.some((property) => property.id === preferredId) : false;
+function AccountProperties({ accountId, children }: { accountId: string | null; children: React.ReactNode }) {
+  const { user } = useAuth();
+  const storageKey = accountId ? `te_active_property_id:${accountId}` : null;
+  const [activeId, setActiveId] = useState(() => {
+    return storageKey && typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
+  });
+  const { data, loading, error, refetch } = useApi<PropertyDto[]>(accountId ? "/properties" : null);
+  const properties = data ?? [];
+  const activeProperty = properties.find((property) => property.id === activeId) ?? properties[0] ?? null;
+  const staffRole = user?.staffAssignments?.find((assignment) => assignment.propertyId === activeProperty?.id)?.role;
 
-      if (hasPreferred) {
-        setActiveId(preferredId);
-      } else {
-        setActiveId(data[0].id);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load properties");
-    } finally {
-      setLoading(false);
-    }
-  }, [activeId]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    if (activeId) {
-      window.localStorage.setItem("te_active_property_id", activeId);
-    } else {
-      window.localStorage.removeItem("te_active_property_id");
-    }
-  }, [activeId]);
-
-  const activeProperty = properties.find((p) => p.id === activeId) ?? null;
+  function setActivePropertyId(id: string) {
+    if (!properties.some((property) => property.id === id)) return;
+    setActiveId(id);
+    if (storageKey) window.localStorage.setItem(storageKey, id);
+  }
 
   return (
-    <PropertyContext.Provider
-      value={{
-        properties,
-        activeProperty,
-        setActivePropertyId: setActiveId,
-        loading,
-        error,
-        refetch: load,
-      }}
-    >
+    <PropertyContext.Provider value={{ properties, activeProperty, staffRole, setActivePropertyId, loading, error, refetch }}>
       {children}
     </PropertyContext.Provider>
   );
 }
 
 export function useProperty() {
-  return useContext(PropertyContext);
+  const context = useContext(PropertyContext);
+  if (!context) throw new Error("useProperty must be used within PropertyProvider");
+  return context;
 }

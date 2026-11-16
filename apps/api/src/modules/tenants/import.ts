@@ -36,7 +36,7 @@ export async function importTenantRoutes(app: FastifyInstance) {
 
   app.post("/properties/:propertyId/tenants/import", { preHandler: [app.authenticateOwnerOrStaff] }, async (request, reply) => {
     const params = request.params as { propertyId: string };
-    const { ownerProfileId } = await assertPropertyAccess(request, params.propertyId, "tenant:write");
+    await assertPropertyAccess(request, params.propertyId, "tenant:write");
 
     const data = await request.file();
     if (!data) {
@@ -118,7 +118,7 @@ export async function importTenantRoutes(app: FastifyInstance) {
         try {
             await prisma.$transaction(async (tx) => {
                 await lockRoom(tx, room.id);
-                await assertRoomAvailability(room.id, ownerProfileId, tx);
+                await assertRoomAvailability(room.id, params.propertyId, tx);
                 const duplicate = await tx.tenant.findFirst({
                   where: { phone: String(row.phone), status: { in: ["ACTIVE", "NOTICE"] } },
                   select: { id: true }

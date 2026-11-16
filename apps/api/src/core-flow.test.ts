@@ -255,6 +255,24 @@ describe("core owner flow", () => {
     const autoReceiptId = paymentData.receipt.id;
     expect(autoReceiptId).toBeTruthy();
 
+    const recent = await app.inject({
+      method: "GET",
+      url: `/properties/${propertyId}/payments/recent`,
+      headers: { authorization: `Bearer ${auth.accessToken}` }
+    });
+    expect(recent.statusCode).toBe(200);
+    expect(recent.json().data).toEqual([
+      { id: paymentId, amount: 850000, mode: "UPI", paidAt: expect.any(String), tenantName: "Integration Test Tenant" }
+    ]);
+
+    const otherOwner = await ownerAuth();
+    const forbidden = await app.inject({
+      method: "GET",
+      url: `/properties/${propertyId}/payments/recent`,
+      headers: { authorization: `Bearer ${otherOwner.accessToken}` }
+    });
+    expect(forbidden.statusCode).toBe(404);
+
     const receiptResponse = await app.inject({
       method: "POST",
       url: "/receipts",
@@ -279,6 +297,40 @@ describe("core owner flow", () => {
 
     expect(receiptDownloadResponse.statusCode).toBe(200);
     expect(receiptDownloadResponse.headers["content-type"]).toContain("application/pdf");
+  });
+
+  it("keeps tenant creation and transfers within the selected property", async () => {
+    const auth = await ownerAuth();
+    const propertyId = await createProperty(auth.accessToken, "First residence");
+    const firstRoom = await createRoom(auth.accessToken, propertyId, "101");
+    const tenantId = await createTenant(auth.accessToken, propertyId, firstRoom, "Assigned Tenant", randomPhone());
+    const otherProperty = await prisma.property.create({
+      data: {
+        name: "Second residence", address: "12 Second Street", city: "Bengaluru",
+        state: "Karnataka", pinCode: "560025", type: "PG", ownerProfileId: auth.ownerProfileId
+      }
+    });
+    const otherRoom = await createRoom(auth.accessToken, otherProperty.id, "101");
+    const headers = { authorization: `Bearer ${auth.accessToken}` };
+    const create = await app.inject({
+      method: "POST",
+      url: `/properties/${propertyId}/tenants`,
+      headers,
+      payload: {
+        roomId: otherRoom, fullName: "Another Tenant", phone: randomPhone(),
+        moveInDate: "2026-03-01", monthlyRent: 850000, depositPaid: 1200000
+      }
+    });
+    const transfer = await app.inject({
+      method: "POST",
+      url: `/tenants/${tenantId}/transfer`,
+      headers,
+      payload: { roomId: otherRoom }
+    });
+    expect(create.statusCode).toBe(404);
+    expect(transfer.statusCode).toBe(404);
+    expect(await prisma.tenant.count({ where: { roomId: otherRoom } })).toBe(0);
+    expect(await prisma.tenant.findUnique({ where: { id: tenantId } })).toMatchObject({ roomId: firstRoom });
   });
 
   it("should reject duplicate room numbers within the same property", async () => {
@@ -794,6 +846,15 @@ describe("core owner flow", () => {
         note: "old payment"
       }
     });
+
+    const restore = await app.inject({
+      method: "PUT",
+      url: `/payments/${paymentId}`,
+      headers: { authorization: `Bearer ${auth.accessToken}` },
+      payload: { isVoided: false }
+    });
+    expect(restore.statusCode).toBe(422);
+    expect(await prisma.payment.findUnique({ where: { id: paymentId } })).toMatchObject({ isVoided: true });
 
     const oldPaymentUpdateResponse = await app.inject({
       method: "PUT",

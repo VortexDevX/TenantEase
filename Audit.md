@@ -1,5 +1,26 @@
 # TenantEase Full-Project Audit
 
+## November 16, 2026 follow-up
+
+The frontend now shares a light workspace design across owner, staff, tenant and admin screens. The overhaul includes property selection, mobile navigation, rent collection and occupancy, OTP and onboarding, public listings, payment entry, tenant move-out workflows and receipt downloads.
+
+| Finding | Fix |
+|---|---|
+| Payments, reports, utility billing and agreements read property context before it was available | Mounted a persistent provider above route content, scoped stored selection to the signed-in account and reset property-bound forms on property changes |
+| Late responses could reintroduce records from the previous property | Canceled superseded requests and associated read state with the exact request path |
+| Staff launcher always opened the default property | Opened the selected assignment and showed actions and routes according to that property's role |
+| Rent row links could open the wrong bill and decimal payments could fail native input validation | Linked each row to its bill, made the outstanding balance explicit and accepted rupees to two decimal places |
+| Tenant payment controls offered only the latest bill | Made every outstanding rent bill selectable and showed earlier balances alongside the latest bill |
+| Recent payments were inferred from ledger entries | Added a property-scoped read of actual non-voided payments ordered by payment date |
+| A voided payment could be restored above the remaining balance and concurrent claim reviews could disagree | Rechecked the effective payment amount in the transaction and made claim transitions conditional on pending status |
+| Tenant creation and transfer could reference a room in another property belonging to the same owner | Scoped room validation to the tenant's property and protected vacancy and transfer against concurrent edits |
+| Browser tests could start a development API against its configured database | Required a dedicated test database and started the test API with scoped storage and mock providers |
+| Production dependency audit pointed to a missing script and the lockfile had known advisories | Restored the production audit command and upgraded the affected dependency chain |
+
+Verification passed for lint, typecheck, production build, 48 API tests, four Playwright smoke tests, and all 15 migrations on a fresh PostgreSQL database. Browser checks covered bill-specific payments, assignment switching, tenant PDF downloads, admin access, and public enquiries. The production dependency audit reported zero known vulnerabilities.
+
+The July audit below records the prior implementation. Live Razorpay and message delivery, deployment configuration, and backup restoration require staging or infrastructure verification.
+
 **Audit date:** 2026-07-11; remediation and UI redesign verified 2026-07-16  
 **Audit target:** Current working tree, including existing uncommitted files  
 **Scope:** Frontend, backend, API integration, auth/RBAC, database, money flows, files, providers, webhooks, jobs, security, accessibility, tests, dependencies, documentation, and operations

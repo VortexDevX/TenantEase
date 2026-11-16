@@ -44,8 +44,8 @@ type UtilitySubmitResponse = {
 };
 
 const UTILITY_TYPES = [
-  { value: "ELECTRICITY", label: "Electricity", icon: Zap, color: "text-amber-500" },
-  { value: "WATER", label: "Water", icon: Droplets, color: "text-sky-500" }
+  { value: "ELECTRICITY", label: "Electricity", icon: Zap, color: "text-warning" },
+  { value: "WATER", label: "Water", icon: Droplets, color: "text-info" }
 ] as const;
 
 const MONTHS = [
@@ -89,6 +89,7 @@ function useUtilityReadings(readings: UtilityReadingRow[] | undefined) {
 }
 
 function FiltersCard({
+  canEdit,
   selectedType,
   selectedMonth,
   selectedYear,
@@ -99,6 +100,7 @@ function FiltersCard({
   onYearChange,
   onRateChange
 }: {
+  canEdit: boolean;
   selectedType: UtilityType;
   selectedMonth: number;
   selectedYear: number;
@@ -145,15 +147,16 @@ function FiltersCard({
             ))}
           </select>
         </FilterField>
-        <FilterField label="Rate/Unit (Rs)">
+        {canEdit && <FilterField label="Rate per unit (₹)">
           <Input
             type="number"
-            min={1}
+            min={0.01}
+            step="0.01"
             value={paisaToRupeesInput(ratePerUnit)}
             onChange={(event) => onRateChange(rupeesToPaisa(event.target.value || "0"))}
             className="h-10"
           />
-        </FilterField>
+        </FilterField>}
       </CardContent>
     </Card>
   );
@@ -362,7 +365,14 @@ function RecordedReadingsCard({
 
 export default function UtilitiesPage() {
   const { authorized } = useRequireRoles(["OWNER", "STAFF"]);
-  const { activeProperty } = useProperty();
+  if (!authorized) return null;
+
+  return <DashboardLayout activePath="/utilities"><UtilitiesPageContent /></DashboardLayout>;
+}
+
+function UtilitiesPageContent() {
+  const { activeProperty, staffRole } = useProperty();
+  const canEdit = staffRole !== "WARDEN";
   const now = new Date();
   const currentYear = now.getFullYear();
   const years = useMemo(() => buildYears(currentYear), [currentYear]);
@@ -421,48 +431,45 @@ export default function UtilitiesPage() {
     }
   }
 
-  if (!authorized) return null;
-
   return (
-    <DashboardLayout activePath="/utilities">
-      <div className="space-y-6">
-        <PageHeader
-          title="Utility Billing"
-          description="Record meter readings and apply replace-safe charges to tenant rent entries."
-        />
-        <FiltersCard
-          selectedType={selectedType}
-          selectedMonth={selectedMonth}
-          selectedYear={selectedYear}
-          years={years}
-          ratePerUnit={ratePerUnit}
-          onTypeChange={setSelectedType}
-          onMonthChange={setSelectedMonth}
-          onYearChange={setSelectedYear}
-          onRateChange={setRatePerUnit}
-        />
-        <SummaryCards
-          count={readingSummary.count}
-          totalUnits={readingSummary.totalUnits}
-          totalCharge={readingSummary.totalCharge}
-        />
-        <SubmitResultCard result={submitResult} />
-        <ReadingEntryCard
-          rooms={rooms ?? undefined}
-          loading={roomsLoading || readingsLoading}
-          selectedType={selectedType}
-          selectedMonth={selectedMonth}
-          selectedYear={selectedYear}
-          ratePerUnit={ratePerUnit}
-          readings={readings}
-          existingByRoom={readingSummary.byRoom}
-          submitting={submitting}
-          onReadingChange={handleReadingChange}
-          onSubmit={handleSubmit}
-        />
-        <RecordedReadingsCard readings={existingReadings ?? undefined} selectedMonth={selectedMonth} selectedYear={selectedYear} />
-      </div>
-    </DashboardLayout>
+    <div className="space-y-6">
+      <PageHeader
+        title="Utility Billing"
+        description={canEdit ? "Record meter readings and add utility charges to tenant rent bills." : "Review recorded meter readings and utility charges."}
+      />
+      <FiltersCard
+        canEdit={canEdit}
+        selectedType={selectedType}
+        selectedMonth={selectedMonth}
+        selectedYear={selectedYear}
+        years={years}
+        ratePerUnit={ratePerUnit}
+        onTypeChange={setSelectedType}
+        onMonthChange={setSelectedMonth}
+        onYearChange={setSelectedYear}
+        onRateChange={setRatePerUnit}
+      />
+      <SummaryCards
+        count={readingSummary.count}
+        totalUnits={readingSummary.totalUnits}
+        totalCharge={readingSummary.totalCharge}
+      />
+      <SubmitResultCard result={submitResult} />
+      {canEdit && <ReadingEntryCard
+        rooms={rooms ?? undefined}
+        loading={roomsLoading || readingsLoading}
+        selectedType={selectedType}
+        selectedMonth={selectedMonth}
+        selectedYear={selectedYear}
+        ratePerUnit={ratePerUnit}
+        readings={readings}
+        existingByRoom={readingSummary.byRoom}
+        submitting={submitting}
+        onReadingChange={handleReadingChange}
+        onSubmit={handleSubmit}
+      />}
+      <RecordedReadingsCard readings={existingReadings ?? undefined} selectedMonth={selectedMonth} selectedYear={selectedYear} />
+    </div>
   );
 }
 

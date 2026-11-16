@@ -332,6 +332,12 @@ function ReportBody({ report, annual }: { report: MonthlyReport; annual: AnnualR
 
 export default function ReportsPage() {
   const { authorized } = useRequireRoles(["OWNER", "STAFF"]);
+  if (!authorized) return null;
+
+  return <DashboardLayout activePath="/reports"><ReportsPageContent /></DashboardLayout>;
+}
+
+function ReportsPageContent() {
   const { activeProperty } = useProperty();
   const now = useMemo(() => new Date(), []);
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -351,36 +357,32 @@ export default function ReportsPage() {
     URL.revokeObjectURL(url);
   }
 
-  if (!authorized) return null;
-
   return (
-    <DashboardLayout activePath="/reports">
-      <div className="flex flex-col gap-6">
-        <PageHeader
-          title="Reports"
-          description={activeProperty ? `${activeProperty.name} monthly and annual performance.` : "Select a property to view financial reports."}
-          actions={
-            <PeriodControls
-              month={month}
-              setMonth={setMonth}
-              year={year}
-              setYear={setYear}
-              onExport={exportMonthly}
-              exportDisabled={!activeProperty || !report}
-            />
-          }
-        />
-
-        {loading ? <ReportLoading /> : null}
-        {!loading && !report ? (
-          <EmptyState
-            title="No report data"
-            description="Generate rent or select another period to see reporting."
-            icon={<IndianRupee className="h-6 w-6" />}
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Reports"
+        description={activeProperty ? `${activeProperty.name} monthly and annual performance.` : "Select a property to view financial reports."}
+        actions={
+          <PeriodControls
+            month={month}
+            setMonth={setMonth}
+            year={year}
+            setYear={setYear}
+            onExport={exportMonthly}
+            exportDisabled={!activeProperty || !report}
           />
-        ) : null}
-        {!loading && report ? <ReportBody report={report} annual={annual} /> : null}
-      </div>
-    </DashboardLayout>
+        }
+      />
+
+      {loading ? <ReportLoading /> : null}
+      {!loading && !report ? (
+        <EmptyState
+          title="No report data"
+          description="Generate rent or select another period to see reporting."
+          icon={<IndianRupee className="h-6 w-6" />}
+        />
+      ) : null}
+      {!loading && report ? <ReportBody report={report} annual={annual} /> : null}
+    </div>
   );
 }

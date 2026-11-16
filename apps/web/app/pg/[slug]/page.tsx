@@ -1,83 +1,86 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Building2, IndianRupee, MapPin, Users } from "lucide-react";
+import { ArrowUpRight, BedDouble, Building2, Check, IndianRupee, MapPin } from "lucide-react";
 import type { PublicListingDto } from "@tenantease/types";
+import { Brand } from "@/components/shared/Brand";
+import { apiUrl } from "@/lib/api-client";
 import { formatPaisa } from "@/lib/format";
 import { EnquiryForm } from "./EnquiryForm";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
-async function getListing(slug: string) {
-  const res = await fetch(`${API_URL}/listings/${slug}`, { cache: "no-store" });
-  if (res.status === 404) return null;
-  const json = await res.json();
-  if (!res.ok || json.success === false) return null;
-  return json.data as PublicListingDto;
+async function getListing(slug: string): Promise<PublicListingDto | null> {
+  const result = await fetch(apiUrl(`/listings/${encodeURIComponent(slug)}`), {
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (result.status === 404) return null;
+  if (!result.ok) throw new Error("Listing service unavailable");
+  return (await result.json()).data;
 }
+
+const propertyTypes: Record<PublicListingDto["property"]["type"], string> = {
+  PG: "Paying guest",
+  HOSTEL: "Hostel",
+  FLAT: "Flat",
+  HOUSE: "House",
+};
 
 export default async function PublicListingPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const listing = await getListing(slug);
+  let listing: PublicListingDto | null;
+  try {
+    listing = await getListing(slug);
+  } catch {
+    return (
+      <main className="listing-page">
+        <Brand href="/login" />
+        <h1 className="mt-10 text-3xl font-bold">Listing temporarily unavailable</h1>
+        <p className="mt-2 text-muted-foreground">Reload the page to try again.</p>
+      </main>
+    );
+  }
   if (!listing) notFound();
 
-  const rentText = listing.property.rentMin === null
-    ? "Rent on request"
-    : listing.property.rentMin === listing.property.rentMax
-      ? formatPaisa(listing.property.rentMin)
-      : `${formatPaisa(listing.property.rentMin)} - ${formatPaisa(listing.property.rentMax ?? listing.property.rentMin)}`;
+  const { property } = listing;
+  const rent = property.rentMin === null ? "On request" : formatPaisa(property.rentMin);
+  const rentRange = property.rentMax !== null && property.rentMax !== property.rentMin ? ` – ${formatPaisa(property.rentMax)}` : "";
 
   return (
-    <main className="min-h-screen bg-background px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_380px]">
-        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
-          <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <Building2 className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-strong">TenantEase Listing</p>
-              <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground">{listing.title}</h1>
-              <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-                <MapPin className="h-4 w-4" />
-                {listing.property.address}, {listing.property.city}, {listing.property.state} {listing.property.pinCode}
-              </p>
-            </div>
-          </div>
-
-          {listing.description ? <p className="mt-6 max-w-3xl text-base leading-7 text-foreground">{listing.description}</p> : null}
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-lg border border-border bg-secondary/30 p-4">
-              <IndianRupee className="mb-2 h-5 w-5 text-primary" />
-              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Rent</p>
-              <p className="mt-1 text-lg font-bold text-foreground">{rentText}</p>
-            </div>
-            <div className="rounded-lg border border-border bg-secondary/30 p-4">
-              <Users className="mb-2 h-5 w-5 text-primary" />
-              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Vacancy</p>
-              <p className="mt-1 text-lg font-bold text-foreground">{listing.property.vacantBeds}/{listing.property.totalBeds} beds</p>
-            </div>
-            <div className="rounded-lg border border-border bg-secondary/30 p-4">
-              <Building2 className="mb-2 h-5 w-5 text-primary" />
-              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Type</p>
-              <p className="mt-1 text-lg font-bold text-foreground">{listing.property.type}</p>
-            </div>
-          </div>
-
-          {listing.amenities.length > 0 ? (
-            <div className="mt-6">
-              <p className="text-sm font-bold text-foreground">Amenities</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {listing.amenities.map((amenity) => (
-                  <span key={amenity} className="rounded-full border border-border bg-secondary px-3 py-1 text-sm font-semibold text-foreground">{amenity}</span>
+    <main className="listing-page">
+      <header className="listing-brand">
+        <Brand href="/login" />
+        <Link href="/login" className="dashboard-link">Sign in<ArrowUpRight size={15} aria-hidden="true" /></Link>
+      </header>
+      <div className="listing-hero">
+        <span className="listing-type"><Building2 size={16} aria-hidden="true" />{propertyTypes[property.type] ?? property.type}</span>
+        <h1>{listing.title}</h1>
+        <p><MapPin size={17} aria-hidden="true" /><span>{property.address}, {property.city}, {property.state} {property.pinCode}</span></p>
+      </div>
+      <div className="listing-content">
+        <div className="min-w-0 space-y-4">
+          <section className="listing-facts" aria-label="Rent and availability">
+            <div><IndianRupee size={19} aria-hidden="true" /><span>Monthly rent</span><strong>{rent}{rentRange}</strong></div>
+            <div><BedDouble size={19} aria-hidden="true" /><span>Beds available</span><strong>{property.vacantBeds} of {property.totalBeds}</strong></div>
+          </section>
+          {listing.description && (
+            <section className="dashboard-panel">
+              <h2 className="mb-3 text-xl font-bold tracking-tight">About this property</h2>
+              <p className="whitespace-pre-line break-words leading-7 text-muted-foreground">{listing.description}</p>
+            </section>
+          )}
+          {listing.amenities.length > 0 && (
+            <section className="dashboard-panel">
+              <h2 className="mb-3 text-xl font-bold tracking-tight">Amenities</h2>
+              <ul className="flex flex-wrap gap-2">
+                {listing.amenities.map((amenity, index) => (
+                  <li key={`${amenity}-${index}`} className="inline-flex items-center gap-1.5 rounded-lg bg-secondary px-2.5 py-1.5 text-sm">
+                    <Check size={14} aria-hidden="true" />{amenity}
+                  </li>
                 ))}
-              </div>
-            </div>
-          ) : null}
-        </section>
-
-        <aside>
-          <EnquiryForm slug={slug} />
-        </aside>
+              </ul>
+            </section>
+          )}
+        </div>
+        <EnquiryForm slug={slug} />
       </div>
     </main>
   );

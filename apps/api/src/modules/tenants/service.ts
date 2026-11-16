@@ -9,11 +9,11 @@ export async function lockRoom(tx: Prisma.TransactionClient, roomId: string) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${roomId}))`;
 }
 
-export async function assertRoomAvailability(roomId: string, ownerProfileId: string, db: DbClient = prisma) {
+export async function assertRoomAvailability(roomId: string, propertyId: string, db: DbClient = prisma) {
   const room = await db.room.findFirst({
     where: {
       id: roomId,
-      property: { ownerProfileId }
+      propertyId
     }
   });
 

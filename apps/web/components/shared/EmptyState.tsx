@@ -13,7 +13,7 @@ export function EmptyState({ title, description, icon, action, className }: Empt
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] bg-white/[0.02] p-8 text-center",
+        "flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-secondary/50 p-8 text-center",
         className
       )}
     >

@@ -56,42 +56,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
+    const controller = new AbortController();
     const initAuth = async () => {
       const currentPath = pathname || (typeof window !== "undefined" ? window.location.pathname : "");
-      if (isPublicPath(currentPath)) {
+      if (currentPath.startsWith("/pg/")) {
         setIsLoading(false);
-        try {
-          const userData = await fetchApi<User>("/auth/me");
-          setUser(userData);
-          router.replace(roleHomePath(userData.role));
-        } catch {
-          clearAuthTokens();
-          setUser(null);
-        }
         return;
       }
 
+      const isAuthPage = PUBLIC_PATHS.includes(currentPath);
       try {
-        const userData = await fetchApi<User>("/auth/me");
+        const userData = await fetchApi<User>("/auth/me", { signal: controller.signal });
+        if (controller.signal.aborted) return;
         setUser(userData);
 
-        if (currentPath === "/onboarding" && userData.role !== "OWNER") {
-          router.replace(roleHomePath(userData.role));
-        } else if (currentPath === "/onboarding" && userData.role === "OWNER" && userData.displayName) {
-          router.replace("/");
-        } else if (userData.role === "OWNER" && !userData.displayName && currentPath !== "/onboarding") {
+        if (userData.role === "OWNER" && !userData.displayName && currentPath !== "/onboarding") {
           router.replace("/onboarding");
+        } else if (isAuthPage || (currentPath === "/onboarding" && (userData.role !== "OWNER" || userData.displayName))) {
+          router.replace(roleHomePath(userData.role));
         }
       } catch {
+        if (controller.signal.aborted) return;
         clearAuthTokens();
         setUser(null);
-        router.replace("/login");
+        if (!isAuthPage) router.replace("/login");
       } finally {
-        setIsLoading(false);
+        if (!controller.signal.aborted) setIsLoading(false);
       }
     };
 
-    initAuth();
+    void initAuth();
+    return () => controller.abort();
   }, [pathname, router]);
 
   const login = useCallback((accessToken: string, refreshToken: string | undefined, userData: User, isNewUser: boolean) => {

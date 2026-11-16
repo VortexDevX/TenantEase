@@ -1,3 +1,5 @@
+import type { RentEntryDto } from "@tenantease/types";
+
 export function rupeesToPaisa(value: string | number) {
   const raw = String(value).trim().replace(/,/g, "");
 
@@ -18,4 +20,7 @@ export function paisaToRupeesInput(value: number | null | undefined) {
   const rupees = Math.trunc(value / 100);
   const paise = Math.abs(value % 100);
   return paise === 0 ? String(rupees) : `${rupees}.${String(paise).padStart(2, "0")}`;
+}
+export function isRentOverdue(entry: RentEntryDto, now: number) {
+  return entry.amountPaid < entry.amountDue && Date.parse(entry.dueDate) < now;
 }

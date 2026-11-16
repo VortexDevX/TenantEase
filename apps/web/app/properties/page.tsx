@@ -7,12 +7,14 @@ import { useRequireRole } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Building, Plus, MapPin, Loader2, ExternalLink } from "lucide-react";
+import { ArrowUpRight, BedDouble, Building, Plus, MapPin, Loader2, ExternalLink } from "lucide-react";
 import { useProperty } from "@/lib/PropertyContext";
 import { fetchApi } from "@/lib/api-client";
 import { paisaToRupeesInput, rupeesToPaisa } from "@/lib/money";
 import { CreatePropertyModal } from "@/components/properties/CreatePropertyModal";
 import type { EnquiryDto, PropertyListingDto, PropertySettingsDto } from "@tenantease/types";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { EmptyState } from "@/components/shared/EmptyState";
 
 function PropertiesContent() {
   const { properties, loading: propLoading, refetch, setActivePropertyId, activeProperty } = useProperty();
@@ -21,8 +23,10 @@ function PropertiesContent() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [listing, setListing] = useState<PropertyListingDto | null>(null);
   const [savedListing, setSavedListing] = useState<PropertyListingDto | null>(null);
+  const [amenitiesDraft, setAmenitiesDraft] = useState("");
   const [enquiries, setEnquiries] = useState<EnquiryDto[]>([]);
   const [listingSaving, setListingSaving] = useState(false);
+  const [status, setStatus] = useState<{ error: boolean; text: string } | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -41,6 +45,7 @@ function PropertiesContent() {
       .then((item) => {
         setListing(item);
         setSavedListing(item);
+        setAmenitiesDraft(item.amenities.join("\n"));
       })
       .catch(() => {
         setListing(null);
@@ -54,12 +59,16 @@ function PropertiesContent() {
   async function saveSettings() {
     if (!activeProperty?.id || !settings) return;
     setSettingsSaving(true);
+    setStatus(null);
     try {
       const saved = await fetchApi<PropertySettingsDto>(`/properties/${activeProperty.id}/settings`, {
         method: "PUT",
         body: JSON.stringify(settings),
       });
       setSettings(saved);
+      setStatus({ error: false, text: "Property settings saved." });
+    } catch (err) {
+      setStatus({ error: true, text: err instanceof Error ? err.message : "Could not save property settings." });
     } finally {
       setSettingsSaving(false);
     }
@@ -68,6 +77,7 @@ function PropertiesContent() {
   async function saveListing() {
     if (!activeProperty?.id || !listing) return;
     setListingSaving(true);
+    setStatus(null);
     try {
       const saved = await fetchApi<PropertyListingDto>(`/properties/${activeProperty.id}/listing`, {
         method: "PUT",
@@ -76,11 +86,15 @@ function PropertiesContent() {
           description: listing.description,
           contactPhone: listing.contactPhone,
           isEnabled: listing.isEnabled,
-          amenities: listing.amenities
+          amenities: amenitiesDraft.split("\n").map((item) => item.trim()).filter(Boolean)
         })
       });
       setListing(saved);
       setSavedListing(saved);
+      setAmenitiesDraft(saved.amenities.join("\n"));
+      setStatus({ error: false, text: "Listing saved." });
+    } catch (err) {
+      setStatus({ error: true, text: err instanceof Error ? err.message : "Could not save listing." });
     } finally {
       setListingSaving(false);
     }
@@ -102,7 +116,7 @@ function PropertiesContent() {
       listing.description !== savedListing.description ||
       listing.contactPhone !== savedListing.contactPhone ||
       listing.isEnabled !== savedListing.isEnabled ||
-      listing.amenities.join("\n") !== savedListing.amenities.join("\n")
+      amenitiesDraft !== savedListing.amenities.join("\n")
     )
   );
   const canOpenPublicListing = Boolean(savedListing?.isEnabled && !listingDirty);
@@ -126,72 +140,47 @@ function PropertiesContent() {
       )}
 
       <div className="flex flex-col gap-6 animate-fade-in pb-10">
-        <div className="flex justify-between items-end">
-          <section>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-3">
-              <Building className="w-8 h-8 text-primary" /> Properties
-            </h1>
-            <p className="text-muted-foreground font-medium mt-1">
-              Manage all your PGs, hostels, and flats.
-            </p>
-          </section>
-          <Button onClick={() => setShowModal(true)} className="rounded-xl shadow-soft">
-            <Plus className="w-4 h-4 mr-2" /> Add Property
-          </Button>
-        </div>
-
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-4">
+        <PageHeader title="Properties" description="Manage property settings, availability and public listings."
+          actions={<Button onClick={() => setShowModal(true)}><Plus size={17} aria-hidden="true" /> Add property</Button>} />
+        {status && <p role={status.error ? "alert" : "status"}
+          className={`rounded-lg px-4 py-3 text-sm ${status.error ? "bg-destructive-soft text-destructive" : "bg-success-soft text-success"}`}>
+          {status.text}
+        </p>}
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {properties.length > 0 ? (
             properties.map((prop) => (
-              <Card key={prop.id} className="shadow-float border-white/[0.06] hover:border-primary/40 transition-all cursor-pointer group overflow-hidden">
-                <CardHeader className="pb-3 border-b border-white/[0.04]">
-                  <div className="flex justify-between items-start">
-                    <CardTitle className="text-xl font-bold tracking-tight group-hover:text-primary transition-colors">{prop.name}</CardTitle>
-                    <span className="text-xs font-bold bg-white/[0.04] border border-white/[0.06] px-2 py-1 rounded-md text-muted-foreground uppercase">{prop.type}</span>
+              <Card key={prop.id} className="flex flex-col">
+                <CardHeader className="grow">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="dashboard-row-icon"><Building size={18} aria-hidden="true" /></span>
+                    <span className="rounded-md bg-secondary px-2 py-1 text-xs font-semibold text-muted-foreground">{prop.type}</span>
                   </div>
-                  <CardDescription className="flex items-center gap-1 mt-1 pb-1">
-                    <MapPin className="w-3 h-3 shrink-0" /> <span className="truncate text-muted-foreground">{prop.city}, {prop.state}</span>
+                  <CardTitle className="text-xl">{prop.name}</CardTitle>
+                  <CardDescription className="flex items-start gap-1.5">
+                    <MapPin size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
+                    <span className="break-words">{prop.address}, {prop.city}, {prop.state} {prop.pinCode}</span>
                   </CardDescription>
+                  <p className="mt-3 flex items-center gap-2 text-sm font-medium"><BedDouble size={16} aria-hidden="true" />{prop.vacantBeds} vacant · {prop.occupiedBeds} occupied</p>
                 </CardHeader>
-                <CardContent className="p-4 bg-white/[0.01] flex justify-between items-center">
-                   <div className="flex flex-col">
-                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Address</span>
-                      <span className="text-sm font-medium truncate w-[200px] text-foreground">{prop.address} - {prop.pinCode}</span>
-                   </div>
-                   <div className="hidden items-center gap-2 group-hover:flex">
-                     <Button
-                       variant={activeProperty?.id === prop.id ? "default" : "ghost"}
-                       size="sm"
-                       onClick={() => setActivePropertyId(prop.id)}
-                     >
-                       {activeProperty?.id === prop.id ? "Active" : "Set Active"}
-                     </Button>
-                     <Link href="/">
-                       <Button variant="ghost" size="sm" onClick={() => setActivePropertyId(prop.id)}>
-                         Open
-                       </Button>
-                     </Link>
-                   </div>
+                <CardContent className="flex flex-wrap items-center justify-between gap-2 border-t border-border p-3">
+                  {activeProperty?.id === prop.id ? (
+                    <span className="px-2 text-xs font-semibold text-primary">Active property</span>
+                  ) : <Button variant="ghost" size="sm" onClick={() => setActivePropertyId(prop.id)}>Set active</Button>}
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/" onClick={() => setActivePropertyId(prop.id)}>Overview<ArrowUpRight size={14} aria-hidden="true" /></Link>
+                  </Button>
                 </CardContent>
               </Card>
             ))
           ) : (
-            <div className="col-span-full py-12 text-center border-2 border-dashed border-white/[0.08] rounded-xl bg-white/[0.01]">
-               <Building className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-               <h3 className="text-lg font-bold">No Properties Found</h3>
-               <p className="text-muted-foreground text-sm max-w-sm mx-auto mt-2 mb-4">
-                 You haven't added any properties yet. Click the Add Property button to get started.
-               </p>
-               <Button onClick={() => setShowModal(true)} variant="outline">
-                 <Plus className="w-4 h-4 mr-2" /> Quick Add Property
-               </Button>
-            </div>
+            <EmptyState className="col-span-full" title="No properties yet" icon={<Building size={23} aria-hidden="true" />}
+              description="Add a property to start tracking rooms and rent." />
           )}
         </div>
 
         {activeProperty && settings && (
           <Card className="shadow-soft">
-            <CardHeader className="border-b border-white/[0.04]">
+            <CardHeader className="border-b border-border">
               <CardTitle className="text-lg">Property Settings</CardTitle>
               <CardDescription>Rent due date, late fees, and receipt details for {activeProperty.name}.</CardDescription>
             </CardHeader>
@@ -228,7 +217,7 @@ function PropertiesContent() {
 
         {activeProperty && listing && (
           <Card className="shadow-soft">
-            <CardHeader className="border-b border-white/[0.04]">
+            <CardHeader className="border-b border-border">
               <CardTitle className="text-lg">Public Listing</CardTitle>
               <CardDescription>Publish vacancy details and capture enquiries for {activeProperty.name}.</CardDescription>
             </CardHeader>
@@ -248,17 +237,20 @@ function PropertiesContent() {
                   rows={3}
                   value={listing.description ?? ""}
                   onChange={(e) => setListing({ ...listing, description: e.target.value || null })}
-                  className="flex w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground"
+                  className="flex w-full rounded-lg border border-border bg-secondary/50 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground"
                 />
               </div>
               <div className="md:col-span-2">
                 <label htmlFor="listing-amenities" className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amenities</label>
-                <Input
+                <textarea
                   id="listing-amenities"
-                  value={listing.amenities.join(", ")}
-                  onChange={(e) => setListing({ ...listing, amenities: e.target.value.split(",").map((item) => item.trim()).filter(Boolean) })}
-                  placeholder="WiFi, meals, laundry"
+                  rows={3}
+                  aria-describedby="amenities-help"
+                  value={amenitiesDraft}
+                  onChange={(e) => setAmenitiesDraft(e.target.value)}
+                  className="w-full rounded-lg border border-input px-3 py-2 text-base sm:text-sm"
                 />
+                <p id="amenities-help" className="mt-1 text-sm text-muted-foreground">Enter one amenity per line.</p>
               </div>
               <div className="flex items-center gap-3">
                 <input
@@ -266,15 +258,15 @@ function PropertiesContent() {
                   type="checkbox"
                   checked={listing.isEnabled}
                   onChange={(e) => setListing({ ...listing, isEnabled: e.target.checked })}
-                  className="h-4 w-4 rounded border-white/[0.08] bg-white/[0.04] text-primary focus:ring-primary/50"
+                  className="h-4 w-4 rounded border-border bg-secondary/50 text-primary focus:ring-primary/50"
                 />
                 <label htmlFor="listing-enabled" className="text-sm font-semibold text-foreground">Publish listing</label>
               </div>
-              <div className="flex justify-end gap-3">
+              <div className="flex flex-wrap justify-end gap-2">
                 {canOpenPublicListing && savedListing ? (
-                  <Link href={savedListing.publicUrl} target="_blank">
-                    <Button variant="outline"><ExternalLink className="mr-2 h-4 w-4" />Open Public Page</Button>
-                  </Link>
+                  <Button asChild variant="outline">
+                    <Link href={savedListing.publicUrl} target="_blank" rel="noopener"><ExternalLink size={16} aria-hidden="true" />Open public page</Link>
+                  </Button>
                 ) : null}
                 {listing.isEnabled && listingDirty ? (
                   <Button variant="outline" disabled>Save before opening</Button>
@@ -290,17 +282,17 @@ function PropertiesContent() {
 
         {activeProperty && (
           <Card className="shadow-soft">
-            <CardHeader className="border-b border-white/[0.04]">
+            <CardHeader className="border-b border-border">
               <CardTitle className="text-lg">Listing Enquiries</CardTitle>
               <CardDescription>{enquiries.length} enquiry{enquiries.length === 1 ? "" : "ies"} from public vacancy pages.</CardDescription>
             </CardHeader>
             <CardContent className="p-6">
               {enquiries.length === 0 ? (
-                <p className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-4 py-6 text-center text-sm font-medium text-muted-foreground">No enquiries yet.</p>
+                <p className="rounded-lg bg-secondary/50 border border-border px-4 py-6 text-center text-sm font-medium text-muted-foreground">No enquiries yet.</p>
               ) : (
                 <div className="space-y-3">
                   {enquiries.map((enquiry) => (
-                    <div key={enquiry.id} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+                    <div key={enquiry.id} className="rounded-lg border border-border bg-secondary/50 p-4">
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div>
                           <p className="font-bold text-foreground">{enquiry.name}</p>
@@ -310,7 +302,7 @@ function PropertiesContent() {
                         <select
                           value={enquiry.status}
                           onChange={(e) => updateEnquiryStatus(enquiry, e.target.value as EnquiryDto["status"])}
-                          className="h-9 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 text-sm font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 outline-none"
+                          className="h-9 rounded-lg border border-border bg-secondary/50 px-3 text-sm font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 outline-none"
                         >
                           <option value="NEW">New</option>
                           <option value="CONTACTED">Contacted</option>

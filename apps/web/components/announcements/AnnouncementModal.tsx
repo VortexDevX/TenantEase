@@ -55,7 +55,7 @@ export function AnnouncementModal({ propertyId, onClose, onSuccess }: Props) {
   }
 
   return (
-    <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="announcement-dialog-title" tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-fade-in overflow-y-auto">
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="announcement-dialog-title" tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 animate-fade-in overflow-y-auto">
       <div className="bg-card w-full max-w-lg rounded-2xl shadow-float border border-border overflow-hidden animate-slide-up my-auto">
         <div className="flex justify-between items-center p-4 border-b border-border bg-secondary/30">
            <h2 id="announcement-dialog-title" className="font-bold text-lg text-foreground tracking-tight">Post Announcement</h2>

@@ -1,335 +1,185 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { Suspense, useRef, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, Search, Send } from "lucide-react";
+import type { PaymentDto, PaymentWithReceiptDto, RentEntryDto, TenantDto } from "@tenantease/types";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useRequireRoles } from "@/contexts/AuthContext";
 import { useProperty } from "@/lib/PropertyContext";
 import { useApi } from "@/lib/useApi";
-import { useRequireRoles } from "@/contexts/AuthContext";
-import { fetchApi } from "@/lib/api-client";
+import { buildQuery, fetchApi } from "@/lib/api-client";
 import { formatPaisa } from "@/lib/format";
 import { paisaToRupeesInput, rupeesToPaisa } from "@/lib/money";
-import { IndianRupee, Search, CheckCircle2, ChevronRight, Banknote, CreditCard, Building, Loader2, Send } from "lucide-react";
-import type { TenantDto, RentEntryDto, PaymentWithReceiptDto } from "@tenantease/types";
 
-function getInitials(name: string): string {
-  return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
-}
+type ManualMode = Exclude<PaymentDto["mode"], "ONLINE">;
+const paymentModes: { value: ManualMode; label: string }[] = [
+  { value: "UPI", label: "UPI" }, { value: "CASH", label: "Cash" }, { value: "BANK_TRANSFER", label: "Bank transfer" },
+];
 
 function RecordPaymentContent() {
-  const searchParams = useSearchParams();
-  const { activeProperty, loading: propLoading } = useProperty();
-  const propertyId = activeProperty?.id;
-
-  const { data: tenants, loading: tenantsLoading } = useApi<TenantDto[]>(
-    propertyId ? `/properties/${propertyId}/tenants?limit=100` : null
-  );
-
+  const params = useSearchParams();
+  const { activeProperty, staffRole } = useProperty();
   const [search, setSearch] = useState("");
-  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(searchParams.get("tenantId"));
-  const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState<"UPI" | "CASH" | "BANK_TRANSFER">("UPI");
-  const [referenceNumber, setReferenceNumber] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [generatedReceiptId, setGeneratedReceiptId] = useState<string | null>(null);
-  const [sendingReceipt, setSendingReceipt] = useState(false);
-  const [receiptSent, setReceiptSent] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [sendError, setSendError] = useState<string | null>(null);
+  const [tenant, setTenant] = useState<TenantDto | null>(null);
+  const [useLink, setUseLink] = useState(true);
+  const [entryId, setEntryId] = useState<string | null>(params.get("rentEntryId"));
+  const [amountDraft, setAmountDraft] = useState<string | null>(null);
+  const [mode, setMode] = useState<ManualMode>("UPI");
+  const [reference, setReference] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState<PaymentWithReceiptDto | null>(null);
+  const [delivery, setDelivery] = useState<"idle" | "sending" | "sent">("idle");
+  const attempt = useRef<{ details: string; key: string } | null>(null);
+  const linkedId = useLink ? params.get("tenantId") : null;
+  const linked = useApi<TenantDto>(linkedId ? `/tenants/${encodeURIComponent(linkedId)}` : null);
+  const selected = tenant ?? (linked.data && linked.data.propertyId === activeProperty?.id ? linked.data : null);
+  const matches = useApi<TenantDto[]>(activeProperty && !selected && search.trim()
+    ? `/properties/${activeProperty.id}/tenants${buildQuery({ search: search.trim(), limit: 8 })}` : null);
+  const ledger = useApi<RentEntryDto[]>(selected ? `/tenants/${selected.id}/rent` : null);
+  const entries = ledger.data?.filter((entry) => entry.amountPaid < entry.amountDue) ?? [];
+  const entry = entryId ? entries.find((item) => item.id === entryId) : entries[0];
+  const balance = entry ? entry.amountDue - entry.amountPaid : 0;
+  const amount = amountDraft ?? (entry ? paisaToRupeesInput(balance) : "");
+  const paisa = rupeesToPaisa(amount);
 
-  const selectedTenant = tenants?.find((t) => t.id === selectedTenantId) ?? null;
+  function selectTenant(next: TenantDto | null) {
+    setTenant(next);
+    setUseLink(false);
+    setEntryId(null);
+    setAmountDraft(null);
+    setSearch("");
+    setReference("");
+    setError("");
+  }
 
-  // Fetch rent entries for selected tenant to find unpaid ones
-  const { data: rentEntries } = useApi<RentEntryDto[]>(
-    selectedTenantId ? `/tenants/${selectedTenantId}/rent` : null,
-    { enabled: !!selectedTenantId }
-  );
-
-  const unpaidEntry = rentEntries?.find((e) => e.status === "UNPAID" || e.status === "PARTIAL" || e.status === "OVERDUE") ?? null;
-
-  useEffect(() => {
-    if (unpaidEntry && !amount) {
-      setAmount(paisaToRupeesInput(unpaidEntry.amountDue - unpaidEntry.amountPaid));
+  async function record(event: React.FormEvent) {
+    event.preventDefault();
+    if (!selected || !entry || pending) return;
+    if (!Number.isSafeInteger(paisa) || paisa <= 0 || paisa > balance) {
+      setError("Enter an amount within the outstanding balance.");
+      return;
     }
-  }, [amount, unpaidEntry]);
 
-  const searchResults = useMemo(() => {
-    if (!tenants || !search.trim()) return [];
-    const q = search.toLowerCase();
-    return tenants.filter(
-      (t) => t.status === "ACTIVE" && (t.fullName.toLowerCase().includes(q) || t.phone.includes(q))
-    ).slice(0, 5);
-  }, [tenants, search]);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!unpaidEntry || !amount) return;
-    const amountPaisa = rupeesToPaisa(amount);
-    if (!Number.isFinite(amountPaisa) || amountPaisa < 1) return;
-
-    setSubmitting(true);
-    setSubmitError(null);
+    const details = { rentEntryId: entry.id, amount: paisa, mode, referenceNumber: reference.trim() || null };
+    const serialized = JSON.stringify(details);
+    if (attempt.current?.details !== serialized) attempt.current = { details: serialized, key: crypto.randomUUID() };
+    setPending(true);
+    setError("");
     try {
-      const paymentData = await fetchApi<PaymentWithReceiptDto>("/payments", {
+      setSaved(await fetchApi<PaymentWithReceiptDto>("/payments", {
         method: "POST",
-        body: JSON.stringify({
-          rentEntryId: unpaidEntry.id,
-          amount: amountPaisa,
-          mode: method,
-          idempotencyKey: crypto.randomUUID(),
-          paidAt: new Date().toISOString(),
-          referenceNumber: referenceNumber || null,
-        }),
-      });
-      setGeneratedReceiptId(paymentData.receipt?.id ?? null);
-      
-      setSubmitted(true);
+        body: JSON.stringify({ ...details, paidAt: new Date().toISOString(), idempotencyKey: attempt.current.key }),
+      }));
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Unable to record payment.");
+      setError(err instanceof Error ? err.message : "Unable to record payment");
     } finally {
-      setSubmitting(false);
+      setPending(false);
     }
   }
 
-  const isLoading = propLoading || tenantsLoading;
+  async function sendReceipt(receiptId: string) {
+    setDelivery("sending");
+    setError("");
+    try {
+      await fetchApi(`/receipts/${receiptId}/send`, { method: "POST" });
+      setDelivery("sent");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to send receipt");
+      setDelivery("idle");
+    }
+  }
 
-  if (submitted) {
+  const back = <Button asChild variant="outline"><Link href="/payments"><ArrowLeft size={16} aria-hidden="true" /> Payments</Link></Button>;
+
+  if (saved) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4 animate-fade-in">
-        <div className="w-16 h-16 bg-success/10 text-success rounded-2xl flex items-center justify-center shadow-soft">
-          <CheckCircle2 size={32} />
+      <section className="dashboard-panel mx-auto grid max-w-xl justify-items-start gap-4">
+        <span className="dashboard-row-icon"><CheckCircle2 size={20} aria-hidden="true" /></span>
+        <h1 className="text-3xl font-bold tracking-tight">Payment recorded</h1>
+        <p>{formatPaisa(saved.payment.amount)} received from {selected?.fullName}.</p>
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {delivery === "sent" && <p role="status" className="text-sm text-success">Receipt delivery requested.</p>}
+        <div className="flex flex-wrap gap-2">
+          {back}
+          <Button variant="outline" onClick={() => { selectTenant(null); setSaved(null); setDelivery("idle"); attempt.current = null; }}>Record another</Button>
+          {saved.receipt && staffRole !== "MANAGER" && delivery !== "sent" && (
+            <Button disabled={delivery === "sending"} onClick={() => void sendReceipt(saved.receipt!.id)}>
+              <Send size={16} aria-hidden="true" />{delivery === "sending" ? "Sending…" : "Send receipt"}
+            </Button>
+          )}
         </div>
-        <h2 className="text-2xl font-bold text-foreground">Payment Recorded</h2>
-        <p className="text-muted-foreground font-medium">
-          {formatPaisa(rupeesToPaisa(amount))} from {selectedTenant?.fullName}
-        </p>
-        {sendError ? (
-          <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm font-medium text-destructive">
-            {sendError}
-          </p>
-        ) : null}
-        <div className="flex items-center gap-3 mt-4">
-           <Button variant="outline" onClick={() => { 
-               setSubmitted(false); setSelectedTenantId(null); setAmount(""); setSearch(""); setReferenceNumber("");
-               setGeneratedReceiptId(null); setReceiptSent(false); 
-           }}>
-             Record Another
-           </Button>
-           
-           {generatedReceiptId && !receiptSent && (
-              <Button onClick={async () => {
-                 setSendingReceipt(true);
-                 setSendError(null);
-                 try {
-                     await fetchApi(`/receipts/${generatedReceiptId}/send`, { method: "POST" });
-                     setReceiptSent(true);
-                 } catch (e) {
-                     setSendError(e instanceof Error ? e.message : "Failed to send receipt");
-                 } finally {
-                     setSendingReceipt(false);
-                 }
-              }} disabled={sendingReceipt} className="bg-success text-success-foreground hover:bg-success/90">
-                 {sendingReceipt ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-                 Send Digital Receipt
-              </Button>
-           )}
-           
-           {receiptSent && (
-              <Button variant="secondary" className="bg-success/10 text-success pointer-events-none hover:bg-success/10">
-                 <CheckCircle2 className="w-4 h-4 mr-2" /> Receipt Sent
-              </Button>
-           )}
-        </div>
-      </div>
+      </section>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl mx-auto animate-fade-in pb-10">
-      
-      {/* Header */}
-      <section className="flex flex-col items-center justify-center text-center py-6">
-         <div className="w-16 h-16 bg-primary/10 text-primary-strong rounded-2xl flex items-center justify-center mb-4 shadow-soft">
-            <IndianRupee size={32} />
-         </div>
-         <h1 className="text-3xl font-bold tracking-tight text-foreground">Record Payment</h1>
-         <p className="text-muted-foreground mt-2 font-medium max-w-sm">Capture offline payments or manual digital transfers instantly.</p>
-      </section>
-
-      {/* Form Container */}
-      <Card className="shadow-float border-border/80">
-        <CardContent className="p-0 sm:p-4">
-           <form className="flex flex-col gap-8 p-6" onSubmit={handleSubmit}>
-              {submitError ? (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm font-medium text-destructive">
-                  {submitError}
-                </div>
-              ) : null}
-              
-              {/* Step 1: Select Tenant */}
-              <div className="flex flex-col gap-3 animate-slide-up stagger-1">
-                 <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                   <span className="bg-secondary w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span> 
-                   Select Tenant
-                 </h2>
-                 
-                 {!selectedTenant ? (
-                   <>
-                     <div className="relative w-full">
-                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" size={18} />
-                       <Input
-                         aria-label="Search tenants"
-                         placeholder="Search Tenant Name or Phone..."
-                         className="pl-10 h-12"
-                         value={search}
-                         onChange={(e) => setSearch(e.target.value)}
-                       />
-                     </div>
-                     
-                     {isLoading && (
-                       <div className="flex items-center justify-center py-4">
-                         <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                       </div>
-                     )}
-                     
-                     {searchResults.length > 0 && (
-                       <div className="border border-border rounded-xl overflow-hidden">
-                         {searchResults.map((t) => (
-                           <button
-                             type="button"
-                             key={t.id}
-                             onClick={() => { setSelectedTenantId(t.id); setAmount(paisaToRupeesInput(t.monthlyRent)); setSearch(""); }}
-                             className="w-full text-left flex items-center gap-3 p-3 hover:bg-secondary/50 transition-colors border-b border-border last:border-0"
-                           >
-                             <div className="w-9 h-9 bg-primary/10 text-primary-strong rounded-full flex items-center justify-center font-bold text-sm shrink-0">
-                               {getInitials(t.fullName)}
-                             </div>
-                             <div className="flex flex-col">
-                               <span className="font-semibold text-sm text-foreground">{t.fullName}</span>
-                               <span className="text-xs text-muted-foreground">{t.phone} | {formatPaisa(t.monthlyRent)}/mo</span>
-                             </div>
-                           </button>
-                         ))}
-                       </div>
-                     )}
-                   </>
-                 ) : (
-                   <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                         <div className="w-10 h-10 bg-primary/10 text-primary-strong rounded-full flex items-center justify-center font-bold">
-                           {getInitials(selectedTenant.fullName)}
-                         </div>
-                         <div className="flex flex-col">
-                            <span className="font-semibold text-foreground">{selectedTenant.fullName}</span>
-                            <span className="text-xs text-muted-foreground font-medium">
-                              {selectedTenant.phone} | Due: {unpaidEntry ? formatPaisa(unpaidEntry.amountDue - unpaidEntry.amountPaid) : formatPaisa(selectedTenant.monthlyRent)}
-                            </span>
-                         </div>
-                      </div>
-                      <button type="button" onClick={() => { setSelectedTenantId(null); setAmount(""); }} className="text-xs text-muted-foreground hover:text-foreground font-semibold">Change</button>
-                   </div>
-                 )}
-              </div>
-
-              {selectedTenant && (
-                <>
-                  <div className="h-px bg-border/60 w-full" />
-
-                  {/* Step 2: Payment Details */}
-                  <div className="flex flex-col gap-4 animate-slide-up stagger-2">
-                     <label htmlFor="payment-amount" className="text-sm font-semibold text-foreground flex items-center gap-2">
-                       <span className="bg-secondary w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span> 
-                       Payment Amount
-                     </label>
-                     
-                     <div className="relative w-full">
-                       <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 text-foreground font-bold pointer-events-none" size={20} />
-                       <Input 
-                         id="payment-amount"
-                         type="number" 
-                         value={amount}
-                         onChange={(e) => setAmount(e.target.value)}
-                         className="pl-11 h-16 text-2xl font-bold rounded-xl" 
-                       />
-                       <div className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">
-                         INR
-                       </div>
-                     </div>
-                  </div>
-
-                  <div className="h-px bg-border/60 w-full" />
-
-                  {/* Step 3: Payment Method */}
-                  <div className="flex flex-col gap-3 animate-slide-up stagger-3">
-                     <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                       <span className="bg-secondary w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span> 
-                       Payment Method
-                     </h2>
-                     
-                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        {([
-                          { value: "UPI" as const, icon: CreditCard, label: "UPI / Digital" },
-                          { value: "CASH" as const, icon: Banknote, label: "Cash" },
-                          { value: "BANK_TRANSFER" as const, icon: Building, label: "Bank Transfer" },
-                        ]).map((opt) => (
-                          <button
-                            type="button"
-                            key={opt.value}
-                            onClick={() => setMethod(opt.value)}
-                            className={`relative flex items-center justify-center gap-3 p-4 border rounded-xl cursor-pointer transition-colors ${
-                              method === opt.value
-                                ? "border-primary bg-primary/5 text-primary-strong"
-                                : "border-border hover:bg-secondary/50"
-                            }`}
-                          >
-                            <opt.icon size={18} />
-                            <span className="font-semibold text-sm">{opt.label}</span>
-                            {method === opt.value && (
-                              <CheckCircle2 size={16} className="absolute right-3 text-primary-strong" />
-                            )}
-                          </button>
-                        ))}
-                     </div>
-                     {method !== "CASH" && (
-                       <div className="flex flex-col gap-2">
-                         <label htmlFor="payment-reference" className="text-sm font-semibold text-foreground">Reference Number</label>
-                         <Input
-                           id="payment-reference"
-                           value={referenceNumber}
-                           onChange={(e) => setReferenceNumber(e.target.value)}
-                           placeholder="UPI transaction ID or bank reference"
-                           className="h-12"
-                         />
-                       </div>
-                     )}
-                  </div>
-
-                  <div className="pt-6 animate-slide-up stagger-4">
-                    <Button
-                      type="submit"
-                      className="w-full h-14 text-lg rounded-xl shadow-float group"
-                      disabled={submitting || !amount || !unpaidEntry}
-                    >
-                       {submitting ? (
-                         <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                       ) : null}
-                       Confirm Payment <ChevronRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                    </Button>
-                    {!unpaidEntry && selectedTenant && (
-                      <p className="text-xs text-muted-foreground text-center mt-3">
-                        No unpaid rent entry found for this tenant. Generate rent entries first.
-                      </p>
-                    )}
-                  </div>
-                </>
-              )}
-           </form>
-        </CardContent>
-      </Card>
+    <div className="mx-auto grid max-w-3xl gap-5">
+      <PageHeader title="Record payment" description="Apply a cash, UPI or bank transfer to an outstanding rent bill." actions={back} />
+      <form onSubmit={record} className="dashboard-panel grid gap-5">
+        {error && <p role="alert" className="rounded-lg bg-destructive-soft p-3 text-sm text-destructive">{error}</p>}
+        {selected ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-secondary/55 p-3">
+            <div><p className="font-bold">{selected.fullName}</p><p className="text-sm text-muted-foreground">{selected.phone}</p></div>
+            <Button variant="outline" size="sm" disabled={pending} onClick={() => selectTenant(null)}>Change tenant</Button>
+          </div>
+        ) : (
+          <div>
+            <label htmlFor="tenant-search" className="mb-2 block text-sm font-semibold">Find a tenant</label>
+            <div className="relative">
+              <Search size={17} aria-hidden="true" className="pointer-events-none absolute top-3.5 left-3 text-muted-foreground" />
+              <Input id="tenant-search" value={search} onChange={(event) => setSearch(event.target.value)}
+                placeholder="Name or mobile number" className="pl-10" />
+            </div>
+            {(linked.loading || matches.loading) && <p role="status" className="mt-2 text-sm text-muted-foreground">Finding tenants…</p>}
+            {linkedId && !linked.loading && !selected && !search && <p className="mt-2 text-sm text-muted-foreground">The linked tenant is unavailable for this property. Search to choose a tenant.</p>}
+            {matches.error && <p role="alert" className="mt-2 text-sm text-destructive">{matches.error}</p>}
+            {matches.data?.length ? (
+              <ul className="mt-2 divide-y divide-border rounded-lg border border-border">
+                {matches.data.map((item) => <li key={item.id}>
+                  <button type="button" className="flex w-full flex-wrap items-center justify-between gap-2 p-3 text-left text-sm hover:bg-secondary/50"
+                    onClick={() => selectTenant(item)}><strong>{item.fullName}</strong><span className="text-muted-foreground">{item.phone}</span></button>
+                </li>)}
+              </ul>
+            ) : search.trim() && !matches.loading && !matches.error && <p className="mt-2 text-sm text-muted-foreground">No matching tenants.</p>}
+          </div>
+        )}
+        {selected && (ledger.error ? (
+          <p role="alert" className="text-sm text-destructive">{ledger.error} <Button size="sm" variant="ghost" onClick={ledger.refetch}>Try again</Button></p>
+        ) : ledger.loading ? <p role="status" className="text-sm text-muted-foreground">Loading rent bills…</p> : entries.length ? (
+          <>
+            <label className="grid gap-2 text-sm font-semibold">Rent bill
+              <select required value={entry?.id ?? ""} disabled={pending} onChange={(event) => { setEntryId(event.target.value); setAmountDraft(null); }}
+                className="min-h-11 rounded-lg border border-input bg-card px-3 text-sm">
+                {!entry && <option value="">Choose an outstanding bill</option>}
+                {entries.map((item) => <option key={item.id} value={item.id}>{item.billingMonth} · {formatPaisa(item.amountDue - item.amountPaid)} outstanding</option>)}
+              </select>
+            </label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm font-semibold">Amount (₹)
+                <Input type="number" step="0.01" min="0.01" max={balance / 100} required inputMode="decimal"
+                  disabled={!entry || pending} value={amount} onChange={(event) => setAmountDraft(event.target.value)} />
+              </label>
+              <label className="grid gap-2 text-sm font-semibold">Payment method
+                <select value={mode} disabled={pending} onChange={(event) => setMode(event.target.value as ManualMode)} className="min-h-11 rounded-lg border border-input bg-card px-3 text-sm">
+                  {paymentModes.map((method) => <option key={method.value} value={method.value}>{method.label}</option>)}
+                </select>
+              </label>
+            </div>
+            <label className="grid gap-2 text-sm font-semibold">Reference (optional)
+              <Input maxLength={100} disabled={pending} value={reference} onChange={(event) => setReference(event.target.value)} />
+            </label>
+            <Button type="submit" className="justify-between" disabled={pending || !entry || !amount}>
+              {pending ? "Recording…" : "Confirm payment"}{pending ? <Loader2 size={17} className="animate-spin" aria-hidden="true" /> : <ArrowRight size={17} aria-hidden="true" />}
+            </Button>
+          </>
+        ) : <p className="text-sm text-muted-foreground">This tenant has no outstanding rent bills.</p>)}
+      </form>
     </div>
   );
 }
@@ -340,7 +190,7 @@ export default function RecordPayment() {
 
   return (
     <DashboardLayout activePath="/payments">
-      <RecordPaymentContent />
+      <Suspense fallback={<p role="status">Loading payment form…</p>}><RecordPaymentContent /></Suspense>
     </DashboardLayout>
   );
 }

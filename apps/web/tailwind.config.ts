@@ -77,14 +77,10 @@ const config: Config = {
         heading: ["var(--font-heading)", "sans-serif"],
       },
 
-      /* ── Shadows (glass-optimized) ── */
       boxShadow: {
-        card:   "0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2)",
-        soft:   "0 2px 8px rgba(0,0,0,0.25), 0 0 1px rgba(255,255,255,0.05)",
-        float:  "0 8px 30px rgba(0,0,0,0.4), 0 0 1px rgba(255,255,255,0.06)",
-        glow:   "0 0 28px hsl(263 70% 58% / 0.28)",
-        "glow-accent": "0 0 28px hsl(25 95% 53% / 0.24)",
-        glass:  "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)",
+        card: "0 1px 2px rgb(16 45 37 / 4%)",
+        soft: "0 2px 6px rgb(16 45 37 / 8%)",
+        float: "0 18px 50px rgb(16 45 37 / 15%)",
       },
 
       /* ── Backdrop Blur ── */
